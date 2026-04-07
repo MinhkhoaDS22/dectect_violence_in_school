@@ -8,6 +8,7 @@ Hệ thống sử dụng pipeline kết hợp **YOLO** (phát hiện & tracking 
 
 ## 📋 Mục lục
 
+- [Dataset](#-dataset)
 - [Tổng quan Pipeline](#-tổng-quan-pipeline)
 - [Cấu trúc dự án](#-cấu-trúc-dự-án)
 - [Yêu cầu hệ thống](#-yêu-cầu-hệ-thống)
@@ -15,6 +16,78 @@ Hệ thống sử dụng pipeline kết hợp **YOLO** (phát hiện & tracking 
 - [Hướng dẫn sử dụng](#-hướng-dẫn-sử-dụng)
 - [Chi tiết Pipeline](#-chi-tiết-pipeline)
 - [Kết quả](#-kết-quả)
+
+---
+
+## 📦 Dataset
+
+> **⬇️ Tải dataset**: [GitHub Releases — data_labels.zip (~1GB)](https://github.com/MinhkhoaDS22/dectect_violence_in_school/releases/tag/v1.0)
+
+Dataset gồm **389 video** được thu thập và gán nhãn thủ công, chia thành 2 class:
+
+| Class | Số lượng | Mô tả | Ví dụ |
+|-------|----------|-------|-------|
+| **Violence** 🔴 | 189 video | Hành vi bạo lực: đánh nhau, xô đẩy, đuổi đánh | `v_001.mp4` → `v_189.mp4` |
+| **Non-Violence** 🟢 | 200 video | Hoạt động bình thường: đi bộ, đứng nói chuyện, chơi đùa | `nv_001.mp4` → `nv_200.mp4` |
+
+### Thông tin kỹ thuật
+
+| Thuộc tính | Chi tiết |
+|------------|----------|
+| **Tổng dung lượng** | ~1 GB |
+| **Định dạng** | `.mp4`, `.avi` |
+| **FPS gốc** | 24–30 fps (được chuẩn hóa về 30fps khi train) |
+| **Độ phân giải gốc** | Đa dạng (được chuẩn hóa về 64×64 khi train) |
+| **Thời lượng** | 3–10 giây/video |
+| **Bối cảnh** | Trường học, sân trường, hành lang, lớp học |
+| **Annotation** | Bounding box XML chuẩn CVAT (có sẵn trong file zip) |
+
+### Nội dung file zip
+
+File `data_labels.zip` chứa cả **video** và **annotation labels**:
+
+```
+data_labels.zip
+├── data/                  # 📂 Video dataset
+│   ├── violence/          #    189 video bạo lực
+│   │   ├── v_001.mp4
+│   │   └── ...
+│   └── non_violence/      #    200 video bình thường
+│       ├── nv_001.mp4
+│       └── ...
+│
+└── fix_labels/            # 🏷️ Annotation XML (CVAT format)
+    ├── violence/          #    189 file XML
+    │   ├── v_001.xml
+    │   └── ...
+    └── non_violence/      #    200 file XML
+        ├── nv_001.xml
+        └── ...
+```
+
+### Cách sử dụng dataset
+
+```bash
+# 1. Tải file zip từ GitHub Releases
+# 2. Giải nén vào thư mục gốc của project:
+
+# Windows (PowerShell)
+Expand-Archive data_labels.zip -DestinationPath .
+
+# Linux/Mac
+unzip data_labels.zip
+
+# Sau khi giải nén, cấu trúc sẽ là:
+# project/
+# ├── data/
+# │   ├── violence/
+# │   └── non_violence/
+# ├── fix_labels/
+# │   ├── violence/
+# │   └── non_violence/
+# ├── train_ai.py
+# └── ...
+```
 
 ---
 
@@ -68,18 +141,15 @@ dectect_violence_in_school/
 ├── check_labels.py        # 🔍 Kiểm tra & preview annotation đã sửa
 ├── rename.py              # 📝 Tiện ích đổi tên video theo format chuẩn
 │
-├── data/                  # 📂 Dataset video (không đưa lên GitHub)
-│   ├── violence/          #    200 video bạo lực
+├── data/                  # 📂 Dataset video (tải từ Releases)
+│   ├── violence/          #    189 video bạo lực
 │   └── non_violence/      #    200 video không bạo lực
 │
-├── fix_labels/            # 🏷️ Annotation XML đã chỉnh sửa (CVAT format)
+├── fix_labels/            # 🏷️ Annotation XML (tải từ Releases)
 │   ├── violence/
 │   └── non_violence/
 │
-├── processed_tracks_v4/   # 💾 Cache dữ liệu đã tiền xử lý (tự sinh)
-│   ├── manifest.json
-│   ├── violence/*.npy
-│   └── non_violence/*.npy
+├── processed_tracks_v4/   # 💾 Cache dữ liệu đã tiền xử lý (tự sinh khi chạy)
 │
 ├── .gitignore
 └── README.md
@@ -113,33 +183,47 @@ dectect_violence_in_school/
 
 ```bash
 # 1. Clone repo
-git clone https://github.com/<your-username>/dectect_violence_in_school.git
+git clone https://github.com/MinhkhoaDS22/dectect_violence_in_school.git
 cd dectect_violence_in_school
 
 # 2. Cài đặt dependencies
 pip install torch torchvision opencv-python ultralytics numpy matplotlib seaborn scikit-learn tqdm
+
+# 3. Tải dataset từ Releases và giải nén (xem mục Dataset ở trên)
 ```
 
 ---
 
 ## 🚀 Hướng dẫn sử dụng
 
-### Bước 1: Chuẩn bị Dataset
+### Bước 1: Tải và chuẩn bị Dataset
 
-Đặt video vào thư mục `data/`:
-```
-data/
-├── violence/        # Video có bạo lực
-│   ├── v_001.mp4
-│   ├── v_002.mp4
-│   └── ...
-└── non_violence/    # Video bình thường
-    ├── nv_001.mp4
-    ├── nv_002.mp4
-    └── ...
+1. Tải **data_labels.zip** (~1GB) từ [GitHub Releases](https://github.com/MinhkhoaDS22/dectect_violence_in_school/releases/tag/v1.0)
+2. Giải nén vào thư mục gốc của project:
+
+```bash
+# Windows (PowerShell)
+Expand-Archive data_labels.zip -DestinationPath .
+
+# Linux/Mac
+unzip data_labels.zip
 ```
 
-### Bước 2: Detection & Tracking với YOLO
+3. Kiểm tra cấu trúc:
+```
+project/
+├── data/
+│   ├── violence/        # 189 video (v_001.mp4 → v_189.mp4)
+│   └── non_violence/    # 200 video (nv_001.mp4 → nv_200.mp4)
+├── fix_labels/
+│   ├── violence/        # 189 file XML annotation
+│   └── non_violence/    # 200 file XML annotation
+└── train_ai.py
+```
+
+### Bước 2: Detection & Tracking với YOLO (tuỳ chọn)
+
+> ⚠️ **Bước này đã được thực hiện sẵn** — annotation XML có trong file zip. Chỉ cần chạy nếu muốn tạo lại annotation từ đầu.
 
 ```bash
 python dectect_people.py
@@ -276,7 +360,7 @@ Input: (batch, 30, 3, 64, 64)
 ## 📊 Kết quả
 
 ### Dataset
-- **Tổng**: ~400 video (200 violence + 200 non-violence)
+- **Tổng**: 389 video (189 violence + 200 non-violence)
 - **Sau Sliding Window**: ~21,000+ cửa sổ 30-frame
 - **Split**: 80% train / 20% val (stratified theo video)
 
