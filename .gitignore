@@ -1,0 +1,49 @@
+# === DỮ LIỆU NẶNG (video, model weights, dataset cache) ===
+data/
+data_test/
+processed_tracks_v4/
+processed_dataset*.pt
+*.pth
+*.pt
+!requirements.txt
+
+# === YOLO model weights ===
+yolo*.pt
+
+# === Output artifacts ===
+previews/
+fixed_previews/
+labels/
+*.png
+
+# === Python ===
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# === IDE ===
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# === OS ===
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# === Archives ===
+*.rar
+*.zip
+*.7z
+
+# === Gemini ===
+.gemini/
+.agents/
