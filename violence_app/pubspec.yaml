@@ -1,0 +1,35 @@
+name: violence_app
+description: "SafeWatch — Violence Detection & Alert System"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  # HTTP & API
+  dio: ^5.4.3
+  http: ^1.2.1
+  # File picking
+  file_picker: ^8.1.2
+  # UI & Fonts
+  google_fonts: ^6.2.1
+  flutter_animate: ^4.5.0
+  percent_indicator: ^4.2.3
+  # Date & Storage
+  intl: ^0.19.0
+  shared_preferences: ^2.3.1
+  fl_chart: ^1.2.0
+  pdf: ^3.12.0
+  printing: ^5.14.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

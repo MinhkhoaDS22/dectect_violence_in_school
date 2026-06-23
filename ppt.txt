@@ -1,0 +1,152 @@
+==============================================================================
+   NỘI DUNG SLIDE POWERPOINT — BÁO CÁO ĐỒ ÁN TỐT NGHIỆP
+   Chủ đề: Xây dựng hệ thống phát hiện hành vi bạo lực trong trường học
+   Ngành: Khoa học Dữ liệu — HUTECH 2026
+   Tổng: 10 SLIDE | Thời gian: 12–15 phút trình bày + 5 phút Q&A
+==============================================================================
+
+GHI CHÚ THIẾT KẾ (Dành cho người làm slide):
+- Font chữ: Tiêu đề (Calibri Bold / SVN-Poppins 28-32pt), Nội dung (Calibri 18-22pt).
+- Màu sắc chủ đạo: Trắng/Xám nhạt (nền), Xanh dương đậm (nhấn mạnh), Đỏ/Cam (cảnh báo).
+- Hạn chế chữ: Mỗi slide không quá 5-6 gạch đầu dòng, ưu tiên dùng hình ảnh, sơ đồ.
+
+==============================================================================
+===== SLIDE 1: TRANG TIÊU ĐỀ =====
+
+[Trung tâm slide]
+XÂY DỰNG HỆ THỐNG PHÁT HIỆN HÀNH VI BẠO LỰC TRONG TRƯỜNG HỌC
+SỬ DỤNG HỌC SÂU (DEEP LEARNING) VÀ THỊ GIÁC MÁY TÍNH
+
+[Thông tin góc dưới]
+• Sinh viên thực hiện: Trương Minh Khoa — MSSV: 2286400011
+• Giảng viên hướng dẫn: ThS. Nguyễn Quang Phúc
+• Lớp: 22DKHA1 — Ngành: Khoa học Dữ liệu
+• TP. Hồ Chí Minh, năm 2026
+
+[Hình ảnh minh họa]
+Chèn một hình ảnh camera an ninh trường học đang nhận diện (có bounding box bao quanh người).
+
+
+===== SLIDE 2: ĐẶT VẤN ĐỀ & MỤC TIÊU =====
+
+[Cột trái] Tính cấp thiết (Tại sao làm đề tài này?):
+• Bạo lực học đường đang là vấn đề nhức nhối, ảnh hưởng lớn đến tâm sinh lý học sinh.
+• Hệ thống camera hiện tại đa phần chỉ dùng để "xem lại" sau khi sự việc đã xảy ra.
+• Cần một giải pháp công nghệ có khả năng "tự động giám sát và cảnh báo tức thời".
+
+[Cột phải] Mục tiêu đề tài:
+• Thu thập và gán nhãn bộ dữ liệu chuyên biệt về bạo lực (389 video).
+• Xây dựng mô hình AI nhận diện chính xác hành vi bạo lực (CNN + Bi-LSTM + Attention).
+• Tối ưu mô hình nhẹ gọn để chạy được trên các thiết bị thông thường.
+• Tích hợp vào ứng dụng thực tế (SafeWatch) để gửi cảnh báo đến ban giám thị.
+
+
+===== SLIDE 3: TỔNG QUAN HỆ THỐNG (PIPELINE) =====
+
+Tiêu đề: Quy trình xử lý từ Video thô đến Cảnh báo
+
+[Sơ đồ flowchart ngang hoặc dọc đơn giản]
+1. Đầu vào (Video/Camera): Nhận luồng video thực tế.
+2. Phát hiện & Theo dõi (YOLO11s + ByteTrack): Xác định vị trí từng học sinh và theo dõi chuyển động xuyên suốt video.
+3. Trích xuất đặc trưng (Tiền xử lý): Cắt (crop) hình ảnh từng người, chuẩn hóa kích thước (96x96) và tạo các chuỗi khung hình.
+4. Phân tích hành vi (AI Model): Đưa chuỗi khung hình qua mô hình Học sâu để đánh giá có xảy ra bạo lực hay không.
+5. Cảnh báo (SafeWatch App): Nếu phát hiện bạo lực, hệ thống kích hoạt chuông và gửi thông báo lên ứng dụng.
+
+
+===== SLIDE 4: XÂY DỰNG VÀ XỬ LÝ DỮ LIỆU =====
+
+[Cột trái] Bộ dữ liệu tự xây dựng:
+• Tổng số lượng: 389 video ngắn (3-10 giây).
+• Phân loại: 189 video có bạo lực, 200 video bình thường.
+• Quá trình gán nhãn: Sử dụng AI (YOLO) để khoanh vùng tự động, sau đó tinh chỉnh thủ công bằng công cụ CVAT để đảm bảo độ chính xác tuyệt đối.
+
+[Cột phải] Tiền xử lý & Cắt chia dữ liệu:
+• Kỹ thuật Sliding Window: Cắt video thành các đoạn nhỏ (30 khung hình) giúp mô hình dễ dàng học các chuyển động ngắn.
+• Đảm bảo tính khách quan: Dữ liệu được chia theo tỷ lệ 70% Train - 20% Val - 10% Test. Đặc biệt, phân chia theo từng video độc lập để mô hình không bị học vẹt (leakage).
+
+[Chèn hình] data_distribution.png (từ thư mục results)
+
+
+===== SLIDE 5: KIẾN TRÚC MÔ HÌNH HỌC SÂU =====
+
+Tiêu đề: Mô hình Đề xuất - Kết hợp Không gian và Thời gian
+
+[Sơ đồ minh họa kiến trúc mô hình với các icon dễ hiểu]
+• Bước 1 - Đôi Mắt (Spatial CNN): Nhìn vào từng khung hình để phân tích tư thế, góc tay chân (trích xuất đặc trưng không gian).
+• Bước 2 - Phản xạ (Multi-scale Conv1D): Bắt các chuyển động đột ngột ở các tốc độ khác nhau (như cú đấm nhanh hay xô đẩy chậm).
+• Bước 3 - Bộ Não (Bi-LSTM): Xâu chuỗi các khung hình lại với nhau theo 2 chiều (tiến và lùi) để hiểu ngữ cảnh toàn bộ hành động.
+• Bước 4 - Sự Tập Trung (Temporal Attention): Bỏ qua các lúc đứng im, tự động tập trung sự chú ý vào đúng khoảnh khắc va chạm quan trọng nhất.
+
+
+===== SLIDE 6: KỸ THUẬT HUẤN LUYỆN (TRAINING) =====
+
+[Cột trái] Giải quyết bài toán dữ liệu ít:
+• Khó khăn: Chỉ có 389 video là khá ít so với các mô hình học sâu.
+• Giải pháp Data Augmentation (Tăng cường dữ liệu): 
+  - Lật ngang video, phát ngược video.
+  - Thay đổi độ sáng, thêm nhiễu (noise).
+  - Tăng/giảm tốc độ khung hình.
+• Kỹ thuật MixUp: Lai tạo các video với nhau để mô hình học linh hoạt hơn, tránh học vẹt.
+
+[Cột phải] Hàm mất mát Focal Loss:
+• Thay vì dùng hàm Loss thông thường, hệ thống dùng Focal Loss.
+• Tác dụng: Bắt mô hình phải tập trung học các trường hợp khó phân biệt (ví dụ: học sinh đùa giỡn rất giống đánh nhau), giảm sự chú ý vào các trường hợp quá dễ.
+
+
+===== SLIDE 7: KẾT QUẢ ĐÁNH GIÁ MÔ HÌNH =====
+
+Tiêu đề: Hiệu suất thực nghiệm
+
+[Hàng trên] Biểu đồ huấn luyện:
+• Quá trình hội tụ tốt, không có hiện tượng quá khớp (Overfitting).
+[Chèn hình] improved_history.png 
+
+[Hàng dưới] Bảng số liệu & Confusion Matrix:
+• Độ chính xác (Accuracy) trên tập kiểm thử (Test): 89% 
+• Precision (Violence): 88% | Recall: 83% | F1-Score: 85%
+• Nhận xét: Điểm Recall cao chứng tỏ hệ thống bắt nhạy các vụ bạo lực, hạn chế tối đa việc bỏ sót (ưu tiên cho an ninh).
+
+[Chèn hình] confusion_matrix_test.png
+
+
+===== SLIDE 8: CƠ CHẾ NHẬN DIỆN KÉP VÀ XỬ LÝ ĐA CAMERA =====
+
+Tiêu đề: Xử lý Đa Camera & 2 Tầng Kiểm Tra Chặt Chẽ
+
+[Sơ đồ minh họa cơ chế]
+• Xử lý đa Camera (Multi-Camera): Hệ thống có khả năng tiếp nhận và giám sát song song luồng video từ nhiều camera an ninh khác nhau trong trường học cùng một lúc.
+• Kiểm tra Tầng 1 (Cấp độ cá nhân): Mô hình phân tích hành vi từng học sinh độc lập, lọc qua ngưỡng 45%.
+• Kiểm tra Tầng 2 (Cấp độ thời gian - MAX): Thay vì tính trung bình dễ bị "loãng" bởi đám đông đứng xem (đặc thù học sinh Việt Nam), hệ thống dùng cơ chế MAX. Chỉ cần 1-2 học sinh có hành vi bạo lực là đủ để phát cảnh báo, không cần đa số (≥70%).
+• Điểm nổi bật: Cơ chế 2 tầng này loại bỏ "báo động giả" do nhiễu, đồng thời báo cáo chính xác "số người bạo lực tối đa" cùng lúc để giám thị đánh giá mức độ nghiêm trọng.
+
+
+===== SLIDE 9: DEMO ỨNG DỤNG SAFEWATCH =====
+
+Tiêu đề: Tích hợp Hệ thống vào Ứng dụng Di động SafeWatch
+
+[Giao diện trực quan]
+(Chèn các hình ảnh từ thư mục results: dashboard.png, menu.png, hang_cho.png, setting.png)
+
+• Giới thiệu SafeWatch: Ứng dụng quản lý an ninh trường học theo thời gian thực.
+• Các tính năng nổi bật:
+  - Dashboard: Theo dõi tổng quan các camera và thống kê số người bạo lực.
+  - Hàng chờ đa luồng (FIFO Queue): Xử lý tuần tự tự động "vào trước ra trước" cho nhiều camera mà không gây quá tải phần cứng.
+  - Cài đặt (Settings): Tùy chỉnh nhận thông báo qua Telegram/Email.
+• Tính ứng dụng: Giúp giám thị và bảo vệ phản ứng kịp thời, ngăn chặn hậu quả đáng tiếc.
+
+
+===== SLIDE 10: KẾT LUẬN & HƯỚNG PHÁT TRIỂN =====
+
+[Cột trái] Đạt được:
+✅ Hoàn thành toàn vẹn quy trình từ video thô đến ứng dụng SafeWatch.
+✅ Tự xây dựng và gán nhãn thành công bộ dữ liệu chuyên biệt.
+✅ Đề xuất kiến trúc mô hình (CNN-BiLSTM-Attention) cho độ chính xác cao (89%) mà vẫn nhẹ nhàng, chạy được trên CPU thường.
+✅ Triển khai thành công ứng dụng cảnh báo thực tế.
+
+[Cột phải] Hướng phát triển:
+• Thử nghiệm với các kiến trúc mới (Vision Transformer - ViT).
+• Triển khai kết nối trực tiếp với luồng stream camera IP (RTSP).
+• Tối ưu hóa hiệu năng để chạy trên các thiết bị biên (Edge Devices như Jetson Nano) ngay tại trường học.
+
+Q&A: Trân trọng cảm ơn Hội đồng đã lắng nghe! 
+==============================================================================

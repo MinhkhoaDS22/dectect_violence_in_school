@@ -1,0 +1,313 @@
+
+==============================================================================
+   GIẢI THÍCH CHI TIẾT MÔ HÌNH ImprovedViolenceModel
+   Phát hiện hành vi bạo lực trong trường học — DATN HUTECH 2026
+==============================================================================
+
+Mô hình này được xây dựng để trả lời một câu hỏi: "Đoạn video này có bạo lực không?"
+Nó tự thiết kế từ đầu (không dùng model có sẵn), kết hợp 4 kỹ thuật chính:
+   Spatial CNN → Multi-Scale Conv1D → Bi-LSTM → Temporal Attention
+
+Dưới đây là giải thích từng phần một.
+
+
+==============================================================================
+TỔNG QUAN: MODEL NHÌN VIDEO NHƯ THẾ NÀO?
+==============================================================================
+
+Trước khi đi vào chi tiết, hãy hiểu cách model "đọc" video:
+
+   - Một video được cắt thành các đoạn 30 frame (gọi là "sliding window")
+   - Mỗi frame được crop chỉ lấy phần người (nhờ YOLO đã detect trước)
+   - Mỗi frame crop được resize về 96×96 pixel
+   - 30 frame đó tạo thành 1 sample đưa vào model
+
+   → Model nhìn vào 30 tấm ảnh liên tiếp (~1 giây video)
+     và phán đoán: "có bạo lực không?"
+
+
+==============================================================================
+PHẦN 1 — SPATIAL CNN (Nhìn từng frame)
+==============================================================================
+
+CÂU HỎI: "Frame này trông như thế nào?"
+
+--- Vấn đề ---
+   30 frame đưa vào, nhưng model chưa biết trong mỗi frame có gì.
+   Cần trích xuất đặc trưng (feature) từ từng ảnh: tư thế người,
+   góc tay chân, khoảng cách giữa 2 người, v.v.
+
+--- Giải pháp: Conv2D ---
+   Conv2D là bộ lọc (filter) trượt qua ảnh để phát hiện các pattern:
+   - Lớp đầu: cạnh thẳng, góc cong → biên của cơ thể người
+   - Lớp giữa: tay, chân, khuôn mặt
+   - Lớp cuối: tư thế tổng thể, bố cục không gian
+
+--- Cấu trúc 4 block ---
+
+   Block 1: (3 kênh màu → 32 kênh đặc trưng)
+      Ảnh 96×96 RGB → Conv2D 3→32 → BatchNorm → ReLU → Conv2D → MaxPool
+      Kích thước: 96×96 → 48×48
+      Học được: cạnh, đường viền cơ thể
+
+   Block 2: (32 → 64 kênh)
+      48×48 → 24×24
+      Học được: hình dạng chi tiết hơn (tay, chân)
+
+   Block 3: (64 → 128 kênh)
+      24×24 → 12×12
+      Học được: tư thế người, khoảng cách
+
+   Block 4: (128 → 256 kênh)
+      12×12 → AdaptiveAvgPool → 2×2
+      Học được: ngữ nghĩa tổng thể (người đứng/ngã/tấn công)
+
+--- BatchNorm là gì? ---
+   Chuẩn hóa giá trị sau mỗi lớp để training ổn định hơn.
+   Giống như "căn chỉnh lại thước đo" sau mỗi bước.
+
+--- ReLU là gì? ---
+   Hàm kích hoạt: nếu giá trị âm thì cho = 0, dương thì giữ nguyên.
+   Giúp model học được các pattern phi tuyến (phức tạp).
+
+--- MaxPool là gì? ---
+   Thu nhỏ ảnh xuống một nửa bằng cách giữ lại giá trị lớn nhất
+   trong mỗi vùng 2×2. Giảm tính toán + tăng tính bất biến vị trí.
+
+--- Spatial Dropout (0.15) ---
+   Trong quá trình train, ngẫu nhiên tắt 15% toàn bộ một kênh feature map.
+   Mạnh hơn Dropout thông thường vì nó tắt cả một "loại đặc trưng" chứ
+   không chỉ một pixel. → Giúp model không quá phụ thuộc vào 1 đặc trưng.
+
+--- FC 1024 → 256 ---
+   Sau 4 block CNN, mỗi frame có 256×2×2 = 1024 số.
+   FC (Fully Connected) nén 1024 số đó thành 1 vector 256 chiều.
+   → Vector 256 này là "bản tóm tắt" của 1 frame.
+
+--- Kết quả sau Phần 1 ---
+   Input:  30 frame × (3, 96, 96)
+   Output: 30 vector × 256 chiều
+   = (batch, 30, 256)
+   → Mỗi frame đã có "dấu vân tay" riêng của nó.
+
+
+==============================================================================
+PHẦN 2 — MULTI-SCALE CONV1D (Nhìn chuyển động theo thời gian)
+==============================================================================
+
+CÂU HỎI: "Chuỗi frame này chuyển động ra sao?"
+
+--- Vấn đề ---
+   Bây giờ ta có 30 vector theo thứ tự thời gian.
+   Cần phát hiện: frame liên tiếp thay đổi nhanh hay chậm?
+   Tay giơ lên rồi hạ xuống đột ngột? Hay chuyển động đều đặn?
+
+--- Conv1D là gì? ---
+   Giống Conv2D nhưng chỉ trượt theo 1 chiều — chiều thời gian.
+   Kernel k=3 nghĩa là nhìn 3 frame liên tiếp để phát hiện pattern.
+
+   Ví dụ: kernel=3 nhìn frame [t-1, t, t+1] cùng lúc
+   → Phát hiện: "frame t thay đổi đột ngột so với 2 frame kề"
+   → Đây là dấu hiệu của cú đấm, giật tay
+
+--- Tại sao dùng 3 kernel khác nhau? ---
+
+   Với video 30fps:
+   ┌──────────────┬────────────────┬─────────────────────────────┐
+   │ Kernel size  │ Nhìn bao lâu   │ Phát hiện gì                │
+   ├──────────────┼────────────────┼─────────────────────────────┤
+   │ k=3 (128ch)  │ ~100ms (3fr)   │ Cú đấm, giật tay đột ngột   │
+   │ k=5 (64ch)   │ ~167ms (5fr)   │ Xô đẩy, ngã, ngăn cản       │
+   │ k=7 (64ch)   │ ~233ms (7fr)   │ Đuổi nhau, hành hung kéo dài│
+   └──────────────┴────────────────┴─────────────────────────────┘
+
+   Nếu chỉ dùng k=3: bỏ qua hành vi chậm (bắt nạt nhẹ, kéo áo)
+   Nếu chỉ dùng k=7: bỏ qua hành vi nhanh (cú đấm chỉ 2-3 frame)
+   → Dùng cả 3 rồi CONCAT: model học được mọi tốc độ chuyển động
+
+--- Concat & MaxPool1D ---
+   3 kết quả (128 + 64 + 64 = 256 kênh) được nối lại.
+   MaxPool1D(2): giữ lại thông tin quan trọng, giảm 30 timestep → 15
+
+--- Kết quả sau Phần 2 ---
+   Input:  (batch, 30, 256)
+   Output: (batch, 15, 256)
+   → 15 "moment" quan trọng nhất trong chuỗi chuyển động
+
+
+==============================================================================
+PHẦN 3 — BI-LSTM (Hiểu ngữ cảnh 2 chiều)
+==============================================================================
+
+CÂU HỎI: "Toàn bộ chuỗi này nói lên điều gì?"
+
+--- Vấn đề ---
+   Conv1D chỉ nhìn cục bộ (vài frame gần nhau).
+   Cần hiểu ngữ cảnh toàn bộ: "Trước khi ngã, người này có bị đẩy không?"
+
+--- LSTM là gì? ---
+   LSTM (Long Short-Term Memory) là mạng hồi quy (RNN) đặc biệt.
+   Nó xử lý chuỗi theo thứ tự và có "bộ nhớ":
+   - Nhớ thông tin quan trọng từ xa
+   - Quên thông tin không cần thiết
+   - Cập nhật hiểu biết theo từng bước thời gian
+
+   Ví dụ: Xem frame 1→2→3→...→15 theo thứ tự
+   Ở frame 10, LSTM vẫn "nhớ" điều gì đó xảy ra ở frame 3.
+
+--- Bi (Bidirectional) là gì? ---
+   Thay vì chỉ đọc xuôi (frame 1 → 15), Bi-LSTM đọc cả 2 chiều:
+   - Forward:  frame 1 → 2 → 3 → ... → 15  (đọc xuôi)
+   - Backward: frame 15 → 14 → ... → 1      (đọc ngược)
+
+   Hai chiều output được concat lại: 128 + 128 = 256
+
+   Lý do cần đọc ngược:
+   → "Cú đấm" ở frame 8 sẽ được hiểu rõ hơn nếu biết
+     sau đó (frame 9-15) người kia ngã xuống.
+   → Đọc ngược giúp biết "hậu quả" của hành động trước đó.
+
+--- 2 lớp LSTM ---
+   Lớp 1 học pattern đơn giản: "chuyển động tăng tốc"
+   Lớp 2 học trên output lớp 1: "đây là chuỗi tấn công"
+   Dropout 0.3 giữa 2 lớp: chống overfitting
+
+--- Kết quả sau Phần 3 ---
+   Input:  (batch, 15, 256)
+   Output: (batch, 15, 256)
+   → Mỗi trong 15 timestep giờ mang ngữ cảnh của toàn bộ chuỗi
+
+
+==============================================================================
+PHẦN 4 — TEMPORAL ATTENTION (Chú ý vào khoảnh khắc quan trọng)
+==============================================================================
+
+CÂU HỎI: "Khoảnh khắc nào trong video quan trọng nhất?"
+
+--- Vấn đề ---
+   Trong 15 timestep, không phải timestep nào cũng quan trọng như nhau.
+   Frame người đang đứng bình thường → ít quan trọng
+   Frame cú đấm xảy ra → rất quan trọng
+
+--- Cơ chế Attention ---
+   Với mỗi timestep t (có vector h_t 256 chiều):
+
+   Bước 1: Linear(256 → 64) + Tanh → score trung gian
+   Bước 2: Linear(64 → 1) → 1 số (điểm quan trọng e_t)
+   Bước 3: Softmax trên 15 điểm → trọng số α_t (tổng = 1)
+   Bước 4: context = Σ(α_t × h_t) → vector 256 tổng hợp
+
+   Kết quả: timestep có bạo lực → α_t cao (0.15-0.3)
+             timestep bình thường → α_t thấp (0.02-0.05)
+
+--- Ví dụ trực quan ---
+   Timestep:  1    2    3    4    5    6    7    8    9   10   11   12   13   14   15
+   α_t:      .02  .03  .02  .04  .18  .22  .19  .12  .06  .04  .03  .02  .01  .01  .01
+                                       ↑    ↑    ↑
+                              (Đây là lúc cú đấm xảy ra → attention cao)
+
+   context = 0.02×h1 + 0.03×h2 + ... + 0.22×h6 + ... (tổng có trọng số)
+   → context nặng về thông tin ở frame 5-7 (cú đấm)
+
+--- Kết quả sau Phần 4 ---
+   Input:  (batch, 15, 256)
+   Output: (batch, 256)    ← đã tổng hợp thành 1 vector duy nhất
+
+
+==============================================================================
+PHẦN 5 — FC CLASSIFIER (Đưa ra kết luận)
+==============================================================================
+
+CÂU HỎI: "Cuối cùng, bạo lực hay không?"
+
+--- Cấu trúc ---
+   256 → Linear → 128 (BN, ReLU, Dropout 0.4)
+       → Linear → 64  (ReLU, Dropout 0.3)
+       → Linear → 2   (logits)
+
+   2 đầu ra (logits):
+   logit[0] = điểm "Không bạo lực"
+   logit[1] = điểm "Bạo lực"
+
+--- Softmax → Xác suất ---
+   P(violence)     = exp(logit[1]) / (exp(logit[0]) + exp(logit[1]))
+   P(non-violence) = 1 - P(violence)
+
+--- Ngưỡng quyết định ---
+   Nếu P(violence) ≥ 0.45 → Window này là BẠO LỰC
+   Nếu P(violence)  < 0.45 → Window này BÌNH THƯỜNG
+
+   (Ngưỡng 0.45 thay vì 0.5 để tăng Recall — phát hiện nhiều hơn,
+    chấp nhận một số false positive)
+
+
+==============================================================================
+TỔNG KẾT: DÒNG DỮ LIỆU QUA MODEL
+==============================================================================
+
+   (B, 30, 3, 96, 96)         ← Input: batch video windows
+        ↓
+   [Spatial CNN]
+   (B×30, 3, 96, 96) → Conv2D ×4 blocks → FC 1024→256
+   (B, 30, 256)               ← Mỗi frame = 1 vector 256 chiều
+        ↓
+   [Multi-Scale Conv1D]
+   (B, 256, 30) → k=3,5,7 song song → Concat → MaxPool1D(2)
+   (B, 15, 256)               ← 15 moment chuyển động đã lọc
+        ↓
+   [Bi-LSTM × 2 lớp]
+   (B, 15, 256) → forward + backward
+   (B, 15, 256)               ← Mỗi moment hiểu ngữ cảnh toàn chuỗi
+        ↓
+   [Temporal Attention]
+   (B, 15, 256) → α_t × h_t → Σ
+   (B, 256)                   ← 1 vector tóm tắt toàn bộ window
+        ↓
+   [FC Classifier]
+   (B, 256) → 128 → 64 → 2 → Softmax
+   (B, 2)                     ← [P(non-violence), P(violence)]
+
+
+==============================================================================
+THAM SỐ MÔ HÌNH
+==============================================================================
+
+   Tổng tham số   : ~2,800,000 (~2.8M)
+   Tất cả trainable: 100%
+   Kích thước file : ~8 MB (best_model_v2.pth — lưu dạng float32)
+
+   So sánh:
+   ┌─────────────────────────────┬──────────┬──────────────────────────┐
+   │ Mô hình                     │ Params   │ Ghi chú                  │
+   ├─────────────────────────────┼──────────┼──────────────────────────┤
+   │ Baseline: CNN+LSTM đơn giản │ ~0.8M    │ 1 lớp LSTM, không Bi     │
+   │ 3D CNN (C3D)                │ ~33M     │ Nặng, cần GPU mạnh       │
+   │ ImprovedViolenceModel (ours)│ ~2.8M    │ Nhẹ, chạy được trên CPU  │
+   └─────────────────────────────┴──────────┴──────────────────────────┘
+
+
+==============================================================================
+KỸ THUẬT CHỐNG OVERFITTING
+==============================================================================
+
+   Vì dataset chỉ có 389 video (nhỏ), cần nhiều kỹ thuật để model
+   không "học vẹt" mà học được pattern thực sự:
+
+   1. Spatial Dropout2D(0.15) — Tắt ngẫu nhiên 15% kênh CNN
+   2. Dropout(0.4) sau FC CNN  — Tắt 40% neuron
+   3. LSTM Dropout(0.3)        — Tắt 30% kết nối giữa 2 lớp LSTM
+   4. Dropout(0.4) + (0.3)    — Trong FC Classifier
+   5. BatchNorm ở mọi lớp     — Chuẩn hóa, ổn định training
+   6. Data Augmentation (7 kỹ thuật) — Tăng đa dạng dữ liệu:
+      • Lật ngang (50%)
+      • Phát ngược (50%)
+      • Thay đổi tốc độ 0.8-1.2x (30%)
+      • Jitter độ sáng ±15% (50%)
+      • Temporal jitter drop frame (30%)
+      • Gaussian noise σ=0.015 (50%)
+      • Random erasing vùng nhỏ (25%)
+   7. MixUp (alpha=0.2)        — Trộn 2 sample trong batch
+   8. FocalLoss(gamma=2.0)     — Tập trung học sample khó
+   9. Label Smoothing(0.1)     — Soft target, tránh overconfidence
+
+==============================================================================

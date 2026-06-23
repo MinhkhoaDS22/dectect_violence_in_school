@@ -2,6 +2,7 @@
 data/
 data_test/
 processed_tracks_v4/
+processed_tracks_v5/
 processed_dataset*.pt
 *.pth
 *.pt
@@ -15,6 +16,27 @@ previews/
 fixed_previews/
 labels/
 *.png
+
+# === Archives ===
+*.rar
+*.zip
+*.7z
+data_labels.zip
+
+# === Backend runtime ===
+backend/uploads/
+backend/clips/
+backend/.env
+backend/alerts.json
+
+# === Flutter ===
+violence_app/build/
+violence_app/.dart_tool/
+violence_app/.flutter-plugins
+violence_app/.flutter-plugins-dependencies
+violence_app/.packages
+violence_app/.pub-cache/
+violence_app/.pub/
 
 # === Python ===
 __pycache__/
@@ -33,16 +55,12 @@ build/
 *.njsproj
 *.sln
 *.sw?
+*.iml
 
 # === OS ===
 Thumbs.db
 .DS_Store
 desktop.ini
-
-# === Archives ===
-*.rar
-*.zip
-*.7z
 
 # === Gemini ===
 .gemini/

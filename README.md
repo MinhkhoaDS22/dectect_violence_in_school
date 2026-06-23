@@ -1,418 +1,408 @@
-# 🎓 Detect Violence in School
+# 🛡️ Detect Violence in School
 
-> **Đồ án tốt nghiệp** — Hệ thống phát hiện hành vi bạo lực trong trường học sử dụng Deep Learning.
-
-Hệ thống sử dụng pipeline kết hợp **YOLO** (phát hiện & tracking người) + **CNN-BiLSTM-Attention** (phân loại hành vi bạo lực theo thời gian) để phân tích video giám sát và phát hiện các hành vi bạo lực một cách tự động.
+> **Đồ án tốt nghiệp** — Hệ thống phát hiện hành vi bạo lực trong môi trường học đường sử dụng Deep Learning, với ứng dụng Flutter và backend FastAPI.
 
 ---
 
 ## 📋 Mục lục
 
-- [Dataset](#-dataset)
-- [Tổng quan Pipeline](#-tổng-quan-pipeline)
-- [Cấu trúc dự án](#-cấu-trúc-dự-án)
-- [Yêu cầu hệ thống](#-yêu-cầu-hệ-thống)
-- [Cài đặt](#-cài-đặt)
-- [Hướng dẫn sử dụng](#-hướng-dẫn-sử-dụng)
-- [Chi tiết Pipeline](#-chi-tiết-pipeline)
-- [Kết quả](#-kết-quả)
+- [Tổng quan](#-tổng-quan)
+- [Kiến trúc hệ thống](#-kiến-trúc-hệ-thống)
+- [Mô hình AI](#-mô-hình-ai)
+- [Backend API](#-backend-api)
+- [Ứng dụng Flutter — SafeWatch](#-ứng-dụng-flutter--safewatch)
+- [Kết quả thực nghiệm](#-kết-quả-thực-nghiệm)
+- [Cài đặt và chạy](#-cài-đặt-và-chạy)
+- [Cấu trúc thư mục](#-cấu-trúc-thư-mục)
+- [Công nghệ sử dụng](#-công-nghệ-sử-dụng)
 
 ---
 
-## 📦 Dataset
+## 🎯 Tổng quan
 
-> **⬇️ Tải dataset**: [GitHub Releases — data_labels.zip (~1GB)](https://github.com/MinhkhoaDS22/dectect_violence_in_school/releases/tag/v1.0)
+**SafeWatch** là hệ thống phát hiện bạo lực trong trường học theo thời gian thực, bao gồm 3 thành phần chính:
 
-Dataset gồm **389 video** được thu thập và gán nhãn thủ công, chia thành 2 class:
+| Thành phần | Mô tả |
+|---|---|
+| **AI Model** | Mô hình CNN-BiLSTM-Attention huấn luyện trên dữ liệu video bạo lực/không bạo lực |
+| **Backend** | FastAPI server xử lý video upload, chạy detection, cắt clip, gửi cảnh báo |
+| **Flutter App** | Ứng dụng web SafeWatch — upload video, xem kết quả, quản lý cảnh báo |
 
-| Class | Số lượng | Mô tả | Ví dụ |
-|-------|----------|-------|-------|
-| **Violence** 🔴 | 189 video | Hành vi bạo lực: đánh nhau, xô đẩy, đuổi đánh | `v_001.mp4` → `v_189.mp4` |
-| **Non-Violence** 🟢 | 200 video | Hoạt động bình thường: đi bộ, đứng nói chuyện, chơi đùa | `nv_001.mp4` → `nv_200.mp4` |
-
-### Thông tin kỹ thuật
-
-| Thuộc tính | Chi tiết |
-|------------|----------|
-| **Tổng dung lượng** | ~1 GB |
-| **Định dạng** | `.mp4`, `.avi` |
-| **FPS gốc** | 24–30 fps (được chuẩn hóa về 30fps khi train) |
-| **Độ phân giải gốc** | Đa dạng (được chuẩn hóa về 64×64 khi train) |
-| **Thời lượng** | 3–10 giây/video |
-| **Bối cảnh** | Trường học, sân trường, hành lang, lớp học |
-| **Annotation** | Bounding box XML chuẩn CVAT (có sẵn trong file zip) |
-
-### Nội dung file zip
-
-File `data_labels.zip` chứa cả **video** và **annotation labels**:
+### Luồng hoạt động
 
 ```
-data_labels.zip
-├── data/                  # 📂 Video dataset
-│   ├── violence/          #    189 video bạo lực
-│   │   ├── v_001.mp4
-│   │   └── ...
-│   └── non_violence/      #    200 video bình thường
-│       ├── nv_001.mp4
-│       └── ...
-│
-└── fix_labels/            # 🏷️ Annotation XML (CVAT format)
-    ├── violence/          #    189 file XML
-    │   ├── v_001.xml
-    │   └── ...
-    └── non_violence/      #    200 file XML
-        ├── nv_001.xml
-        └── ...
+📹 Video Upload → 🧠 YOLOv11 Tracking → 🔍 CNN-BiLSTM Phân tích
+    → ⚠️ Phát hiện bạo lực → ✂️ Cắt clip → 📧 Email / 📱 Telegram
 ```
 
-### Cách sử dụng dataset
+---
+
+## 🏗️ Kiến trúc hệ thống
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                     Flutter App (SafeWatch)                      │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────────┐  │
+│  │ Dashboard │  │ Monitor  │  │ History  │  │   Settings     │  │
+│  │ Thống kê  │  │ Upload & │  │ Lịch sử  │  │ Email/Telegram │  │
+│  │ biểu đồ  │  │ Phân tích│  │ cảnh báo │  │ Server URL     │  │
+│  └──────────┘  └──────────┘  └──────────┘  └────────────────┘  │
+└───────────────────────┬──────────────────────────────────────────┘
+                        │ HTTP API (Dio)
+                        ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                    FastAPI Backend (Python)                       │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐ │
+│  │ /api/analyze  │  │ /api/alerts  │  │ /api/clips/{id}/{name}│ │
+│  │ Upload+Detect │  │ CRUD cảnh báo│  │ Download clip          │ │
+│  └──────┬───────┘  └──────────────┘  └────────────────────────┘ │
+│         │                                                        │
+│  ┌──────▼──────────────────────────────────────────────────────┐ │
+│  │              Violence Detector Pipeline                      │ │
+│  │  YOLOv11 Track → Crop → CNN-BiLSTM-Attention → Aggregation │ │
+│  └──────────────────────────────────┬──────────────────────────┘ │
+│                                     │                            │
+│  ┌──────────────────┐  ┌───────────▼────────┐                   │
+│  │ Video Clipper     │  │ Notifier           │                   │
+│  │ Cắt đoạn bạo lực │  │ Gmail + Telegram   │                   │
+│  └──────────────────┘  └────────────────────┘                   │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🧠 Mô hình AI
+
+### Kiến trúc: CNN-BiLSTM-Attention
+
+Pipeline phân tích mỗi cửa sổ 30 frame (1 giây):
+
+```
+Input: (batch, 30, 3, 96, 96)
+        │
+        ▼
+┌─────────────────────┐
+│   Spatial CNN        │   4 blocks Conv2d + BN + ReLU + MaxPool
+│   (Trích xuất đặc   │   → AdaptiveAvgPool → FC giảm chiều
+│    trưng không gian) │   Output: (batch, 30, 256)
+└─────────┬───────────┘
+          ▼
+┌─────────────────────┐
+│   Multi-scale        │   Conv1D kernel 3 (128ch) — cú đấm, giật
+│   Temporal Conv1D    │   Conv1D kernel 5 (64ch)  — xô đẩy
+│   (Đặc trưng        │   Conv1D kernel 7 (64ch)  — đuổi nhau
+│    chuyển động)      │   → Concat (256ch) → MaxPool
+└─────────┬───────────┘
+          ▼
+┌─────────────────────┐
+│   Bi-LSTM            │   2 layers, hidden=128, bidirectional
+│   (Mô hình hoá      │   Output: (batch, seq//2, 256)
+│    trình tự)         │
+└─────────┬───────────┘
+          ▼
+┌─────────────────────┐
+│   Temporal Attention │   Tập trung vào timestep quan trọng
+│                      │   → Context vector (batch, 256)
+└─────────┬───────────┘
+          ▼
+┌─────────────────────┐
+│   Classifier (FC)    │   256 → 128 → 64 → 2 (Non-Violence / Violence)
+│   + BatchNorm        │   Dropout 0.4 + 0.3
+└─────────────────────┘
+```
+
+### Tiền xử lý dữ liệu
+
+| Bước | Mô tả |
+|---|---|
+| Chuẩn hoá FPS | Resample tất cả video về **30 FPS** |
+| Chuẩn hoá kích thước | Resize crop về **96×96** pixels |
+| Chuẩn hoá pixel | Normalize về **[0, 1]** |
+| Sliding Window | Window = **30 frame** (1s), Step = **4 frame** |
+| Track-based | Mỗi người trong video được theo dõi riêng (CVAT annotation) |
+
+### Kỹ thuật huấn luyện
+
+| Kỹ thuật | Chi tiết |
+|---|---|
+| **Loss** | Focal Loss (γ=2.0) + Class Weights + Label Smoothing (0.1) |
+| **Optimizer** | AdamW (lr=2e-4, weight_decay=3e-4) |
+| **LR Schedule** | 5-epoch Warmup → Cosine Annealing Warm Restarts |
+| **MixUp** | α=0.2 — trộn 2 mẫu ngẫu nhiên, giảm overfitting |
+| **Augmentation** | Random Flip, Temporal Reverse, Speed Variation, Brightness Jitter, Gaussian Noise, Random Erasing |
+| **Early Stopping** | Patience = 25 epoch |
+| **Gradient Clipping** | max_norm = 1.0 |
+
+### Logic phát hiện bạo lực (Inference)
+
+1. **YOLOv11** tracking người trong video (ByteTrack)
+2. Crop từng người → chuẩn hoá → sliding window 30 frame
+3. **CNN-BiLSTM-Attention** dự đoán xác suất bạo lực cho mỗi window
+4. Gom theo time slot — dùng **MAX** (không phải MEAN) để 1 người bạo lực trong đám đông vẫn được phát hiện
+5. Yêu cầu **≥5 time-slot liên tiếp** vượt ngưỡng 45% → cảnh báo bạo lực (~2.5 giây)
+
+---
+
+## ⚡ Backend API
+
+Backend xây dựng bằng **FastAPI**, cung cấp các endpoint:
+
+| Method | Endpoint | Mô tả |
+|---|---|---|
+| `GET` | `/api/health` | Kiểm tra trạng thái server |
+| `POST` | `/api/analyze` | Upload video + phân tích bạo lực |
+| `GET` | `/api/alerts` | Lấy danh sách cảnh báo |
+| `GET` | `/api/alerts/{id}` | Xem chi tiết 1 cảnh báo |
+| `DELETE` | `/api/alerts/{id}` | Xoá cảnh báo |
+| `GET` | `/api/clips/{job_id}/{filename}` | Download clip bạo lực |
+
+### Tính năng
+
+- **Phân tích video**: Upload → YOLO tracking → CNN-BiLSTM → trả kết quả JSON
+- **Cắt clip tự động**: Cắt chính xác đoạn bạo lực với watermark "VIOLENCE DETECTED"
+- **Thông báo đa kênh**:
+  - 📧 **Gmail**: Email HTML đẹp kèm clip đính kèm (SMTP + App Password)
+  - 📱 **Telegram Bot**: Gửi tin nhắn + video clip qua Bot API
+- **Lưu trữ cảnh báo**: JSON-based storage, hỗ trợ CRUD
+
+---
+
+## 📱 Ứng dụng Flutter — SafeWatch
+
+Ứng dụng Flutter Web với giao diện dark mode hiện đại.
+
+### Các màn hình
+
+| Màn hình | Mô tả |
+|---|---|
+| **Onboarding** | Giới thiệu ứng dụng lần đầu sử dụng |
+| **Home** | Navigation bar với 4 tab chính |
+| **Monitor** | Upload video + xem kết quả phân tích real-time |
+| **Dashboard** | Thống kê tổng quan: biểu đồ tròn, bar chart, timeline |
+| **History** | Lịch sử cảnh báo, tìm kiếm, chi tiết từng alert |
+| **Queue** | Hàng đợi xử lý khi upload nhiều video |
+| **Settings** | Cấu hình email, Telegram, server URL |
+
+### Tính năng nổi bật
+
+- 🎨 **Giao diện Dark Mode** premium với animations (flutter_animate)
+- 📊 **Dashboard thống kê** với biểu đồ tương tác (fl_chart)
+- 📄 **Xuất báo cáo PDF** chi tiết kết quả phân tích
+- 🔔 **Âm thanh cảnh báo** tuỳ chỉnh được
+- 📹 **Violence Timeline** — hiển thị timeline đoạn bạo lực trực quan
+- ⚙️ **Cấu hình linh hoạt** — thay đổi server URL, email, Telegram ngay trong app
+
+### Thư viện Flutter sử dụng
+
+| Package | Mục đích |
+|---|---|
+| `dio` | HTTP client cho API calls |
+| `file_picker` | Chọn file video để upload |
+| `fl_chart` | Biểu đồ thống kê |
+| `flutter_animate` | Micro-animations cho UI |
+| `google_fonts` | Typography đẹp |
+| `shared_preferences` | Lưu cài đặt local |
+| `pdf` + `printing` | Xuất báo cáo PDF |
+| `intl` | Format ngày giờ |
+| `percent_indicator` | Thanh tiến trình |
+
+---
+
+## 📊 Kết quả thực nghiệm
+
+### Dữ liệu
+
+- **300 video** (violence + non-violence) từ môi trường trường học
+- Annotation bằng **CVAT** (bounding box cho từng người theo frame)
+- Chia dữ liệu theo **video** (không theo track) — tránh data leakage:
+  - **70%** Train | **20%** Validation | **10%** Test
+
+### Hiệu suất mô hình
+
+| Metric | Giá trị |
+|---|---|
+| **Train Accuracy** | ~90% |
+| **Test Accuracy** | ~89% |
+| **Ngưỡng phân loại** | 45% |
+
+> **Lưu ý**: Confusion matrix đánh giá ở cấp **sliding window** (mỗi window = 1 giây video), không phải cấp video. 300 video → ~500-800 tracks → ~2000+ windows.
+
+---
+
+## 🚀 Cài đặt và chạy
+
+### Yêu cầu
+
+- Python 3.10+
+- Flutter 3.10+ (SDK ^3.10.1)
+- CUDA (khuyến nghị, để chạy GPU)
+
+### 1. Huấn luyện mô hình
 
 ```bash
-# 1. Tải file zip từ GitHub Releases
-# 2. Giải nén vào thư mục gốc của project:
+# Cài đặt dependencies
+pip install torch torchvision opencv-python numpy matplotlib seaborn scikit-learn tqdm ultralytics
 
-# Windows (PowerShell)
-Expand-Archive data_labels.zip -DestinationPath .
+# Chuẩn bị dữ liệu
+# - Đặt video vào data/violence/ và data/non_violence/
+# - Đặt XML annotation (CVAT) vào fix_labels/violence/ và fix_labels/non_violence/
 
-# Linux/Mac
-unzip data_labels.zip
-
-# Sau khi giải nén, cấu trúc sẽ là:
-# project/
-# ├── data/
-# │   ├── violence/
-# │   └── non_violence/
-# ├── fix_labels/
-# │   ├── violence/
-# │   └── non_violence/
-# ├── train_ai.py
-# └── ...
+# Chạy huấn luyện
+python train_ai.py
+# → Output: best_model.pth, confusion matrix, biểu đồ
 ```
+
+### 2. Chạy Backend
+
+```bash
+cd backend
+
+# Cài đặt dependencies
+pip install -r requirements.txt
+pip install torch torchvision ultralytics
+
+# Cấu hình
+cp .env.example .env
+# → Sửa file .env: điền Gmail App Password, Telegram Bot Token, đường dẫn model
+
+# Chạy server
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+# hoặc
+python main.py
+```
+
+**Cấu hình `.env`**:
+
+```env
+# Gmail (bật 2FA → tạo App Password)
+GMAIL_SENDER=your_email@gmail.com
+GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
+
+# Telegram Bot (tạo bằng @BotFather)
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+
+# Đường dẫn model
+MODEL_PATH=../results/best_model.pth
+YOLO_PATH=../yolo11s.pt
+```
+
+### 3. Chạy Flutter App
+
+```bash
+cd violence_app
+
+# Cài đặt dependencies
+flutter pub get
+
+# Chạy ứng dụng web
+flutter run -d chrome
+
+# Hoặc build web
+flutter build web
+```
+
+> Sau khi chạy app, vào **Settings** để cấu hình Server URL trỏ về backend (mặc định `http://localhost:8000`).
 
 ---
 
-## 🔄 Tổng quan Pipeline
+## 📁 Cấu trúc thư mục
 
 ```
-Video giám sát
-       │
-       ▼
-┌──────────────────────────┐
-│  1. YOLO Detection       │  dectect_people.py
-│     + ByteTrack Tracking │  → Phát hiện & theo dõi người
-│     → Xuất XML (CVAT)    │  → Bounding box mỗi frame
-└──────────┬───────────────┘
-           │
-           ▼
-┌──────────────────────────┐
-│  2. Tiền xử lý           │  train_ai.py (phần 1)
-│     • Chuẩn hóa FPS→30   │
-│     • Chuẩn hóa Size→64  │
-│     • Normalize [0,1]     │
-│     • Sliding Window      │
-│       30 frame, step 5    │
-└──────────┬───────────────┘
-           │
-           ▼
-┌──────────────────────────┐
-│  3. Huấn luyện Model     │  train_ai.py (phần 2)
-│     CNN → Conv1D →        │
-│     BiLSTM → Attention →  │
-│     Classifier            │
-│     + MixUp, Augmentation │
-└──────────┬───────────────┘
-           │
-           ▼
-    ┌──────────────┐
-    │  Violence?   │
-    │  ✅ / ❌     │
-    └──────────────┘
-```
-
----
-
-## 📁 Cấu trúc dự án
-
-```
-dectect_violence_in_school/
+DATN/
+├── train_ai.py              # Script huấn luyện model CNN-BiLSTM-Attention
+├── dectect_people.py        # Script detect người (testing)
+├── check_labels.py          # Kiểm tra annotation labels
+├── rename.py                # Đổi tên file tiện ích
 │
-├── train_ai.py            # 🧠 Script chính: tiền xử lý + huấn luyện model
-├── dectect_people.py      # 👤 YOLO detection + tracking → xuất XML annotation
-├── check_labels.py        # 🔍 Kiểm tra & preview annotation đã sửa
-├── rename.py              # 📝 Tiện ích đổi tên video theo format chuẩn
+├── data/                    # Dữ liệu video gốc
+│   ├── violence/            #   Video bạo lực
+│   └── non_violence/        #   Video không bạo lực
 │
-├── data/                  # 📂 Dataset video (tải từ Releases)
-│   ├── violence/          #    189 video bạo lực
-│   └── non_violence/      #    200 video không bạo lực
-│
-├── fix_labels/            # 🏷️ Annotation XML (tải từ Releases)
+├── fix_labels/              # Annotation XML (CVAT format)
 │   ├── violence/
 │   └── non_violence/
 │
-├── processed_tracks_v4/   # 💾 Cache dữ liệu đã tiền xử lý (tự sinh khi chạy)
+├── processed_tracks_v5/     # Cache dữ liệu đã tiền xử lý (.npy)
 │
-├── .gitignore
-└── README.md
+├── results/                 # Kết quả huấn luyện
+│   ├── best_model.pth       #   Model tốt nhất
+│   ├── improved_history.png #   Biểu đồ Loss & Accuracy
+│   ├── confusion_matrix_*.png
+│   ├── prob_dist_*.png
+│   └── data_distribution.png
+│
+├── backend/                 # FastAPI Backend
+│   ├── main.py              #   API endpoints
+│   ├── violence_detector.py #   Detection pipeline
+│   ├── video_clipper.py     #   Cắt clip bạo lực
+│   ├── notifier.py          #   Gửi Gmail + Telegram
+│   ├── requirements.txt     #   Python dependencies
+│   ├── .env.example         #   Mẫu cấu hình
+│   ├── uploads/             #   Video upload tạm
+│   └── clips/               #   Clip bạo lực đã cắt
+│
+├── violence_app/            # Flutter App (SafeWatch)
+│   ├── lib/
+│   │   ├── main.dart        #   Entry point
+│   │   ├── models/          #   Data models (AlertModel, QueueJob)
+│   │   ├── screens/         #   7 màn hình UI
+│   │   ├── services/        #   API, PDF, Queue, Sound services
+│   │   ├── theme/           #   Dark theme configuration
+│   │   └── widgets/         #   Custom widgets (Timeline, SoundBar)
+│   ├── pubspec.yaml         #   Flutter dependencies
+│   └── web/                 #   Web platform files
+│
+├── yolo11s.pt               # YOLOv11s pre-trained weights
+├── yolov8s.pt               # YOLOv8s weights (backup)
+└── pipeline.txt             # Mô tả chi tiết pipeline
 ```
 
 ---
 
-## 💻 Yêu cầu hệ thống
+## 🛠️ Công nghệ sử dụng
 
-- **Python** 3.9+
-- **RAM**: tối thiểu 8GB (khuyến nghị 16GB)
-- **GPU**: khuyến nghị NVIDIA GPU với CUDA (chạy được trên CPU nhưng chậm)
+### AI / Deep Learning
 
-### Thư viện Python
+| Công nghệ | Phiên bản | Mục đích |
+|---|---|---|
+| PyTorch | - | Framework deep learning chính |
+| Ultralytics YOLO | v11s | Phát hiện và tracking người |
+| OpenCV | 4.9.0 | Xử lý video, crop, resize |
+| scikit-learn | - | Metrics, confusion matrix |
+| NumPy | 1.26.4 | Xử lý dữ liệu số |
 
-| Thư viện | Mục đích |
-|----------|----------|
-| `torch` | Deep learning framework |
-| `torchvision` | Model pretrained (nếu dùng) |
-| `opencv-python` | Xử lý video & ảnh |
-| `ultralytics` | YOLOv8/v11 detection |
-| `numpy` | Tính toán mảng |
-| `matplotlib` | Vẽ biểu đồ training |
-| `seaborn` | Confusion matrix |
-| `scikit-learn` | Metrics đánh giá |
-| `tqdm` | Progress bar |
+### Backend
 
----
+| Công nghệ | Phiên bản | Mục đích |
+|---|---|---|
+| FastAPI | 0.111.0 | REST API framework |
+| Uvicorn | 0.30.0 | ASGI server |
+| python-dotenv | 1.0.1 | Quản lý biến môi trường |
+| smtplib | built-in | Gửi email Gmail |
+| python-telegram-bot | 21.3 | Gửi cảnh báo Telegram |
 
-## 🛠 Cài đặt
+### Frontend
 
-```bash
-# 1. Clone repo
-git clone https://github.com/MinhkhoaDS22/dectect_violence_in_school.git
-cd dectect_violence_in_school
+| Công nghệ | Phiên bản | Mục đích |
+|---|---|---|
+| Flutter | SDK ^3.10.1 | Framework UI cross-platform |
+| Dart | - | Ngôn ngữ lập trình |
+| Dio | 5.4.3 | HTTP client |
+| fl_chart | 1.2.0 | Biểu đồ thống kê |
+| flutter_animate | 4.5.0 | Animations |
 
-# 2. Cài đặt dependencies
-pip install torch torchvision opencv-python ultralytics numpy matplotlib seaborn scikit-learn tqdm
+### Annotation
 
-# 3. Tải dataset từ Releases và giải nén (xem mục Dataset ở trên)
-```
-
----
-
-## 🚀 Hướng dẫn sử dụng
-
-### Bước 1: Tải và chuẩn bị Dataset
-
-1. Tải **data_labels.zip** (~1GB) từ [GitHub Releases](https://github.com/MinhkhoaDS22/dectect_violence_in_school/releases/tag/v1.0)
-2. Giải nén vào thư mục gốc của project:
-
-```bash
-# Windows (PowerShell)
-Expand-Archive data_labels.zip -DestinationPath .
-
-# Linux/Mac
-unzip data_labels.zip
-```
-
-3. Kiểm tra cấu trúc:
-```
-project/
-├── data/
-│   ├── violence/        # 189 video (v_001.mp4 → v_189.mp4)
-│   └── non_violence/    # 200 video (nv_001.mp4 → nv_200.mp4)
-├── fix_labels/
-│   ├── violence/        # 189 file XML annotation
-│   └── non_violence/    # 200 file XML annotation
-└── train_ai.py
-```
-
-### Bước 2: Detection & Tracking với YOLO (tuỳ chọn)
-
-> ⚠️ **Bước này đã được thực hiện sẵn** — annotation XML có trong file zip. Chỉ cần chạy nếu muốn tạo lại annotation từ đầu.
-
-```bash
-python dectect_people.py
-```
-
-Script sẽ:
-- Dùng **YOLOv11s** phát hiện người trong mỗi frame
-- Dùng **ByteTrack** theo dõi (tracking) mỗi người qua các frame
-- Xuất ra annotation XML theo chuẩn **CVAT** vào `labels/`
-- Xuất video preview có vẽ bounding box vào `previews/`
-
-### Bước 3: Kiểm tra & sửa Annotation (nếu cần)
-
-```bash
-# Sửa bounding box bằng CVAT hoặc thủ công
-# Copy file XML đã sửa vào fix_labels/
-
-# Kiểm tra kết quả:
-python check_labels.py
-```
-
-### Bước 4: Huấn luyện Model
-
-```bash
-python train_ai.py
-```
-
-Script sẽ tự động chạy toàn bộ pipeline:
-1. **Tiền xử lý** — Chuẩn hóa FPS, Size, tạo Sliding Window, lưu cache ra disk
-2. **Huấn luyện** — CNN-BiLSTM-Attention với MixUp, augmentation, early stopping
-3. **Đánh giá** — Xuất confusion matrix, classification report, biểu đồ training
-4. **Lưu model** — `best_model_v2.pth`
+| Công cụ | Mục đích |
+|---|---|
+| CVAT | Gán nhãn bounding box theo frame cho từng người trong video |
 
 ---
 
-## 🔬 Chi tiết Pipeline
+## 👨‍💻 Tác giả
 
-### 1. YOLO Detection + Tracking (`dectect_people.py`)
-
-| Thành phần | Chi tiết |
-|------------|----------|
-| Model | YOLOv11s |
-| Tracker | ByteTrack |
-| Confidence | 0.38 |
-| IoU threshold | 0.55 |
-| Output | XML annotation chuẩn CVAT |
-
-### 2. Tiền xử lý dữ liệu (`train_ai.py` — phần 1)
-
-Pipeline chuẩn hóa 4 bước:
-
-| Bước | Mô tả | Chi tiết |
-|------|--------|----------|
-| **Chuẩn hóa FPS** | Resample về 30fps | Video 60fps → lấy cách frame, 24fps → lặp frame |
-| **Chuẩn hóa Size** | Resize crop → 64×64 | Dùng bilinear interpolation |
-| **Chuẩn hóa Pixel** | [0,255] → [0.0, 1.0] | float32 normalization |
-| **Sliding Window** | 30 frame/cửa sổ, step=5 | Data Augmentation: tạo ~21K+ windows từ ~400 video |
-
-**Tối ưu bộ nhớ**: Lưu track crops ra disk dưới dạng `.npy`, dùng **Lazy Dataset** + **memory-mapped numpy** để đọc on-the-fly khi training (không load hết vào RAM).
-
-### 3. Kiến trúc Model
-
-```
-Input: (batch, 30, 3, 64, 64)
-          │
-          ▼
-┌─────────────────────────────┐
-│     Spatial CNN (4 blocks)  │  Trích xuất đặc trưng không gian
-│     32 → 64 → 128 → 256    │  BatchNorm + ReLU + MaxPool
-│     + SpatialDropout2d      │
-│     + FC: 1024 → 256        │
-└──────────┬──────────────────┘
-           │  (batch, 30, 256)
-           ▼
-┌─────────────────────────────┐
-│  Multi-scale Temporal Conv1D│  Trích xuất đặc trưng thời gian
-│     Kernel 3 → 128 channels │  Cú đấm, giật (motion ngắn)
-│     Kernel 5 → 64 channels  │  Xô đẩy (motion trung)
-│     Kernel 7 → 64 channels  │  Đuổi nhau (motion dài)
-│     Concat → 256, MaxPool   │
-└──────────┬──────────────────┘
-           │  (batch, 15, 256)
-           ▼
-┌─────────────────────────────┐
-│    Bi-LSTM (2 layers)       │  Nắm bắt ngữ cảnh thời gian
-│    Hidden: 128 × 2 = 256    │  Hai chiều: quá khứ + tương lai
-│    + Dropout 0.3            │
-└──────────┬──────────────────┘
-           │  (batch, 15, 256)
-           ▼
-┌─────────────────────────────┐
-│   Temporal Attention        │  Tập trung vào timestep quan trọng
-│   Linear → Tanh → Linear   │
-│   Softmax → Weighted Sum    │
-└──────────┬──────────────────┘
-           │  (batch, 256)
-           ▼
-┌─────────────────────────────┐
-│      Classifier (FC)        │
-│   256 → 128 → 64 → 2       │
-│   BatchNorm + Dropout       │
-└──────────┬──────────────────┘
-           │
-           ▼
-    Violence / Non-Violence
-```
-
-### 4. Kỹ thuật huấn luyện
-
-| Kỹ thuật | Chi tiết |
-|----------|----------|
-| **Optimizer** | AdamW (lr=3e-4, weight_decay=5e-4) |
-| **LR Schedule** | Cosine Annealing Warm Restarts |
-| **Loss** | CrossEntropy + Label Smoothing (0.2) + Class Weights |
-| **MixUp** | alpha=0.3 — trộn 2 mẫu ngẫu nhiên để chống overfitting |
-| **Early Stopping** | Patience = 20 epochs |
-| **Gradient Clipping** | max_norm = 1.0 |
-| **Ngưỡng phân loại** | 45% — nếu P(violence) ≥ 45% → phân loại là bạo lực |
-
-### 5. Data Augmentation
-
-| Augmentation | Xác suất | Mô tả |
-|-------------|----------|--------|
-| Horizontal Flip | 50% | Lật ngang cả sequence |
-| Temporal Reverse | 50% | Phát ngược sequence |
-| Random Speed | 30% | Tăng/giảm tốc 0.8x–1.2x |
-| Brightness Jitter | 50% | Thay đổi độ sáng ±15% |
-| Temporal Jitter | 30% | Xóa 1-2 frame, lặp frame kề |
-| Gaussian Noise | 50% | Noise σ=0.015 |
-| Random Erasing | 25% | Che 1 vùng nhỏ trong ảnh |
+Đồ án tốt nghiệp — Trường Đại học
 
 ---
 
-## 📊 Kết quả
-
-### Dataset
-- **Tổng**: 389 video (189 violence + 200 non-violence)
-- **Sau Sliding Window**: ~21,000+ cửa sổ 30-frame
-- **Split**: 80% train / 20% val (stratified theo video)
-
-### Hiệu năng
-| Metric | Giá trị |
-|--------|---------|
-| **Val Accuracy** | ~89-92% |
-| **Ngưỡng phân loại** | 45% |
-
----
-
-## 📄 Mô tả các file
-
-| File | Chức năng |
-|------|-----------|
-| `train_ai.py` | **Script chính** — Tiền xử lý dữ liệu (chuẩn hóa FPS, size, sliding window) + Huấn luyện model CNN-BiLSTM-Attention + Đánh giá + Xuất kết quả |
-| `dectect_people.py` | Dùng YOLO + ByteTrack để phát hiện & tracking người trong video, xuất annotation XML chuẩn CVAT |
-| `check_labels.py` | Kiểm tra chất lượng annotation bằng cách vẽ bounding box lên video gốc tạo preview |
-| `rename.py` | Tiện ích đổi tên video theo quy chuẩn: `v_001.mp4`, `nv_001.mp4`,... |
-
----
-
-## 🔧 Tiện ích
-
-### Đổi tên video
-```bash
-python rename.py
-# violence/xxx.mp4 → violence/v_001.mp4, v_002.mp4, ...
-# non_violence/xxx.mp4 → non_violence/nv_001.mp4, nv_002.mp4, ...
-```
-
-### Kiểm tra annotation
-```bash
-# Sửa biến TARGET_XML trong check_labels.py
-python check_labels.py
-# → Xuất video preview vào fixed_previews/
-```
-
----
-
-## 📝 Ghi chú
-
-- **Lần đầu chạy `train_ai.py`**: sẽ tiền xử lý toàn bộ video (~3-4 phút), kết quả cache vào `processed_tracks_v4/`. Các lần sau sẽ load cache ngay lập tức.
-- **Chạy trên CPU**: Mỗi epoch mất ~5-10 phút. Khuyến nghị dùng GPU để tăng tốc.
-- **Model đã train**: Lưu tại `best_model_v2.pth` (~8MB).
-
----
-
-## 👤 Tác giả
-
-Đồ án tốt nghiệp — Đại học
-
-## 📜 License
-
-Dự án phục vụ mục đích học tập và nghiên cứu.
+*SafeWatch — Phát hiện bạo lực, bảo vệ học đường* 🛡️

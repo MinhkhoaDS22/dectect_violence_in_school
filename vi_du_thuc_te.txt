@@ -1,0 +1,475 @@
+
+==============================================================================
+   VÍ DỤ THỰC TẾ: ĐƯA VIDEO VÀO HỆ THỐNG PHÁT HIỆN BẠO LỰC
+   Kịch bản: Video camera an ninh trường học ghi lại 1 vụ đánh nhau
+==============================================================================
+
+Video đầu vào: v_example.mp4
+   - Độ dài  : 5 giây
+   - FPS gốc : 60fps → 300 frame
+   - Nội dung: 2 học sinh, người A đẩy người B rồi đấm 1 cái, người B ngã
+
+Ta sẽ đi qua từng bước của hệ thống.
+
+
+==============================================================================
+BƯỚC 1 — CHUẨN HÓA FPS  (normalize_frame_indices)
+==============================================================================
+
+Video gốc 60fps, hệ thống cần 30fps chuẩn.
+→ Lấy 1 frame, bỏ 1 frame (lấy frame 0, 2, 4, 6, ...)
+
+   Video gốc : frame 0, 1, 2, 3, 4, 5, ... 299   (300 frame, 60fps)
+   Sau resample: frame 0, 2, 4, 6, 8, ...          (150 frame, 30fps)
+
+Kết quả: 150 frame ở 30fps → video "ảo" 5 giây chuẩn FPS.
+
+
+==============================================================================
+BƯỚC 2 — YOLO DETECT + BYTETRACK  (detect_and_extract_tracks)
+==============================================================================
+
+Mỗi frame trong 150 frame được xử lý bởi YOLO11s:
+
+   Frame 0  : YOLO phát hiện 2 người
+              Người A: bbox (120, 50, 200, 200) → TrackID = 1
+              Người B: bbox (220, 60, 310, 210) → TrackID = 2
+
+   Frame 1  : 2 người vẫn đó, ByteTrack giữ nguyên ID
+   Frame 2  : Tương tự...
+   ...
+   Frame 75 : Người B ngã, bbox thay đổi (210, 150, 330, 240)
+              ByteTrack vẫn nhận ra là TrackID = 2
+
+   → Sau 150 frame, ta có 2 tracks:
+      Track 1 (Người A): 150 bbox
+      Track 2 (Người B): 150 bbox
+
+   Lọc track: Cả 2 đều có 150 frame ≥ 30 → ĐỦ ĐIỀU KIỆN
+
+
+==============================================================================
+BƯỚC 3 — CROP + RESIZE TỪNG FRAME  (cho mỗi track)
+==============================================================================
+
+Lấy Track 1 (Người A) làm ví dụ chi tiết:
+
+   Frame 0:
+      bbox gốc: xtl=120, ytl=50, xbr=200, ybr=200
+      Mở rộng bbox 5%:
+         bw = 200-120 = 80px  → mở rộng 4px mỗi bên
+         bh = 200-50  = 150px → mở rộng 7px mỗi bên
+         bbox mới: (116, 43, 204, 207)
+      Crop vùng đó từ frame gốc: ảnh ~88×164 pixel
+      Resize → 96×96 pixel (cv2.INTER_LINEAR)
+      BGR → RGB
+      Normalize: chia 255 → giá trị [0.0 ... 1.0]
+      Transpose: (96, 96, 3) → (3, 96, 96)  [channel-first cho PyTorch]
+
+   → Làm tương tự cho 150 frame còn lại của Track 1.
+
+   Kết quả lưu ra disk:
+      processed_tracks_v5/violence/v_example_t1.npy
+      Shape: (150, 3, 96, 96)  ← 150 frame, 3 kênh màu, 96×96 pixel
+      Dung lượng: ~25 MB
+
+
+==============================================================================
+BƯỚC 4 — SLIDING WINDOW  (tạo các sample đưa vào model)
+==============================================================================
+
+Track 1 có 150 frame, window=30, step=5:
+
+   Window 1:  frame [ 0 ..  29]  → 1 sample (30, 3, 96, 96)
+   Window 2:  frame [ 5 ..  34]  → 1 sample
+   Window 3:  frame [10 ..  39]  → 1 sample
+   Window 4:  frame [15 ..  44]  → 1 sample
+   ...
+   Window 25: frame [120 .. 149] → 1 sample
+
+   Số windows = (150 - 30) / 5 + 1 = 25 windows
+
+   → Track 1 tạo ra 25 sample để model phân tích
+   → Track 2 cũng tạo 25 sample tương tự
+   → Tổng: 50 sample cho video này
+
+
+==============================================================================
+BƯỚC 5 — ĐƯA VÀO MODEL: PHẦN SPATIAL CNN
+==============================================================================
+
+Lấy Window 8 của Track 1 làm ví dụ:
+   → frame [35 .. 64]: đây là lúc người A đang giơ tay chuẩn bị đấm
+
+   Input: tensor shape (1, 30, 3, 96, 96)
+          (batch=1, 30 frame, 3 kênh, 96×96 pixel)
+
+--- Bước 5.1: Reshape để xử lý song song 30 frame ---
+   (1, 30, 3, 96, 96) → (30, 3, 96, 96)
+   Giờ 30 frame được coi như 30 ảnh độc lập.
+
+--- Bước 5.2: Qua 4 Block Conv2D ---
+
+   Block 1 (3→32, 96×96→48×48):
+      Mỗi trong 32 filter phát hiện 1 loại edge/pattern.
+      Filter 5 chẳng hạn: phát hiện đường viền cánh tay
+      Giá trị cao ở vùng có cánh tay giơ lên.
+
+   Block 2 (32→64, 48×48→24×24):
+      Kết hợp các edge từ Block 1.
+      Bắt đầu nhận ra: "đây là cánh tay đang duỗi ra phía trước"
+
+   Block 3 (64→128, 24×24→12×12):
+      Nhận ra tư thế: "người đang cúi về phía trước, tay vươn ra"
+
+   Block 4 (128→256, 12×12→2×2):
+      AdaptiveAvgPool: nén 12×12 → 2×2
+      Giữ lại thông tin ngữ nghĩa, bỏ thông tin vị trí cụ thể
+
+--- Bước 5.3: Spatial Dropout + FC Reduce ---
+   Spatial Dropout(0.15): ngẫu nhiên tắt một số kênh (chỉ lúc train)
+   Flatten: 256×2×2 = 1024 số
+   FC: 1024 → 256 (BN + ReLU + Dropout 0.4)
+
+--- Bước 5.4: Reshape lại ---
+   (30, 256) → (1, 30, 256)
+
+   Kết quả:
+      Frame 35: vector 256 → [0.12, 0.87, 0.03, ..., 0.44]  (đứng yên)
+      Frame 40: vector 256 → [0.08, 0.91, 0.11, ..., 0.67]  (bắt đầu cử động)
+      Frame 50: vector 256 → [0.41, 0.23, 0.88, ..., 0.92]  (tay giơ lên)
+      Frame 60: vector 256 → [0.72, 0.11, 0.95, ..., 0.88]  (cú đấm)
+      Frame 64: vector 256 → [0.55, 0.34, 0.81, ..., 0.76]  (sau đấm)
+      ...
+   (Các số ở trên chỉ là ví dụ minh họa)
+
+
+==============================================================================
+BƯỚC 6 — ĐƯA VÀO MODEL: PHẦN MULTI-SCALE CONV1D
+==============================================================================
+
+Input: (1, 30, 256) → Permute → (1, 256, 30)
+Bây giờ chiều thứ 3 (30) là chiều thời gian để Conv1D trượt qua.
+
+--- Conv1D kernel=3 (nhìn 3 frame liên tiếp) ---
+   Tại frame 50:
+      Nhìn frame [49, 50, 51]
+      Frame 49: tay bắt đầu giơ lên
+      Frame 50: tay đang giơ lên cao
+      Frame 51: tay đang hạ xuống mạnh
+      → Phát hiện: chuyển động đột ngột → giá trị activation CAO
+      → 128 neuron output mang thông tin "biến đổi nhanh tại t=50"
+
+--- Conv1D kernel=5 (nhìn 5 frame liên tiếp) ---
+   Tại frame 50:
+      Nhìn frame [48, 49, 50, 51, 52]
+      → Thấy toàn bộ arc của cú đấm từ chuẩn bị → tiếp xúc → sau đấm
+      → 64 neuron output mang thông tin "pattern đấm trung hạn"
+
+--- Conv1D kernel=7 (nhìn 7 frame liên tiếp) ---
+   Tại frame 50:
+      Nhìn frame [47..53]
+      → Thấy cả bối cảnh: tiến lại gần, đấm, người kia phản ứng
+      → 64 neuron output mang thông tin "hành vi tấn công tổng thể"
+
+--- Concat 128+64+64 = 256 kênh ---
+   Tất cả thông tin 3 scale được gộp lại tại mỗi timestep.
+
+--- MaxPool1D(2): 30 timestep → 15 timestep ---
+   Giữ lại moment có giá trị cao nhất trong mỗi cặp timestep.
+   Moment có cú đấm (frame 50-55) → được giữ lại.
+   Moment đứng yên → có thể bị bỏ.
+
+--- Permute: (1, 256, 15) → (1, 15, 256) ---
+
+   Kết quả: 15 vector 256 chiều, mỗi vector đã mang thông tin
+   về chuyển động tại thời điểm đó ở 3 tỷ lệ thời gian khác nhau.
+
+
+==============================================================================
+BƯỚC 7 — ĐƯA VÀO MODEL: PHẦN BI-LSTM
+==============================================================================
+
+LƯU Ý QUAN TRỌNG: Mỗi track được xử lý HOÀN TOÀN ĐỘC LẬP.
+BiLSTM của Track 1 chỉ thấy crop của Người A (kẻ tấn công).
+BiLSTM của Track 2 chỉ thấy crop của Người B (nạn nhân).
+Hai track KHÔNG chia sẻ thông tin với nhau trong bước này.
+
+
+══════════════════════════════════════════════════════════════
+TRACK 1 — Người A (kẻ tấn công) đưa vào BiLSTM
+Input: (1, 15, 256) — trích xuất từ 15 moment của crop người A
+══════════════════════════════════════════════════════════════
+
+--- Forward LSTM (đọc xuôi t=1 → t=15) ---
+
+   t=1:  Người A đứng thẳng, hai tay buông xuôi        → h1_fwd
+   t=2:  Người A bắt đầu nghiêng người về phía trước   → h2_fwd (nhớ h1)
+   t=3:  Vai phải nhô ra, trọng tâm cơ thể dịch chuyển → h3_fwd
+   t=4:  Cánh tay phải bắt đầu giơ lên                 → h4_fwd (LSTM: "cử động bất thường")
+   t=5:  Cánh tay giơ cao, khuỷu tay co lại            → h5_fwd (LSTM: "pattern tấn công!")
+   t=6:  Cánh tay duỗi thẳng đột ngột, nắm đấm        → h6_fwd (activation rất cao)
+   t=7:  Cánh tay hạ xuống nhanh                       → h7_fwd
+   t=8:  Người A trở về tư thế thẳng                   → h8_fwd
+   ...
+   t=15: Người A đứng yên, ít cử động                  → h15_fwd
+
+--- Backward LSTM (đọc ngược t=15 → t=1) ---
+
+   t=15: Người A đứng yên                               → h15_bwd
+   ...
+   t=7:  Cánh tay hạ xuống nhanh                        → h7_bwd
+                                                    (biết sau đó A đứng yên → cú đấm đã xong)
+   t=6:  Cánh tay duỗi thẳng đột ngột                   → h6_bwd
+                                                    (biết sau đó tay hạ nhanh → đây là cú đấm hoàn chỉnh!)
+   t=5:  Cánh tay giơ cao                               → h5_bwd
+                                                    (biết sau đó là đấm → tín hiệu cực mạnh)
+   ...
+   t=1:  h1_bwd
+
+--- Ghép 2 chiều tại mỗi timestep ---
+   h_t = [h_t_fwd | h_t_bwd] = vector 256 chiều (128+128)
+
+   Tại t=6 (moment cú đấm):
+      h6_fwd: "trước đó tay đã giơ lên dần → đây là đỉnh điểm"
+      h6_bwd: "sau đó tay hạ nhanh rồi A đứng yên → cú đấm đã xong"
+      h6 = [h6_fwd | h6_bwd] → activation rất cao ở cả 2 chiều
+
+Kết quả Track 1: (1, 15, 256)
+→ Model nhận ra pattern "tay giơ → duỗi đột ngột → hạ nhanh"
+→ Khớp với training data violence (pattern của kẻ tấn công)
+
+
+══════════════════════════════════════════════════════════════
+TRACK 2 — Người B (nạn nhân) đưa vào BiLSTM
+Input: (1, 15, 256) — trích xuất từ 15 moment của crop người B
+══════════════════════════════════════════════════════════════
+
+--- Forward LSTM (đọc xuôi t=1 → t=15) ---
+
+   t=1:  Người B đứng thẳng, bình thường                → h1_fwd
+   t=2:  Người B đứng yên, ít cử động                   → h2_fwd
+   t=3:  Người B đứng yên                               → h3_fwd
+   t=4:  Người B đứng yên                               → h4_fwd
+   t=5:  Người B đứng yên                               → h5_fwd
+   t=6:  ĐỘT NGỘT: cơ thể nghiêng ngang mạnh           → h6_fwd (LSTM: "bất thường!")
+   t=7:  Người B mất thăng bằng, cơ thể ngả nhanh      → h7_fwd (LSTM: "đang ngã!")
+   t=8:  Chân loạng choạng, tay giơ ra vô thức         → h8_fwd
+   t=9:  Người B tiếp tục ngã xuống                    → h9_fwd
+   t=10: Gần sát đất                                    → h10_fwd
+   t=11: Chạm đất                                       → h11_fwd
+   ...
+   t=15: Nằm dưới đất, ít cử động                      → h15_fwd
+
+--- Backward LSTM (đọc ngược t=15 → t=1) ---
+
+   t=15: Người B nằm dưới đất                           → h15_bwd
+   t=14: Người B nằm, gần như không động                → h14_bwd (biết kết quả: nằm đất)
+   ...
+   t=7:  Người B mất thăng bằng nhanh                   → h7_bwd
+                                                    (biết sau đó B ngã hẳn → đây là ngã thật!)
+   t=6:  Cơ thể nghiêng đột ngột                        → h6_bwd
+                                                    (biết sau đó ngã rất nhanh → không phải tự vấp!)
+   ...
+   t=1:  h1_bwd
+
+--- Ghép 2 chiều tại mỗi timestep ---
+
+   Tại t=6 (moment bị tác động):
+      h6_fwd: "trước đó B đứng yên hoàn toàn → thay đổi đột ngột bất thường"
+      h6_bwd: "sau đó B ngã rất nhanh → tác động mạnh từ bên ngoài"
+      h6 = [h6_fwd | h6_bwd] → activation cao ở cả 2 chiều
+
+Kết quả Track 2: (1, 15, 256)
+→ Model nhận ra pattern "đứng yên → đột ngột nghiêng nhanh → ngã"
+→ Khớp với training data violence (pattern của nạn nhân bị tấn công)
+
+LƯU Ý: Model KHÔNG biết "nguyên nhân" người B ngã là do bị đánh.
+Model chỉ nhận ra pattern chuyển động này xuất hiện rất nhiều trong
+video được gán nhãn violence → học được sự liên kết thống kê.
+
+Kết quả mỗi track: (1, 15, 256) — mỗi timestep hiểu ngữ cảnh toàn chuỗi của người đó
+
+
+==============================================================================
+BƯỚC 8 — ĐƯA VÀO MODEL: PHẦN TEMPORAL ATTENTION
+==============================================================================
+
+Input: 15 vector h_t, mỗi cái 256 chiều
+
+--- Tính điểm quan trọng (attention score) ---
+
+   Với mỗi h_t:
+      e_t = Linear(64→1)( Tanh( Linear(256→64)(h_t) ) )
+
+   Kết quả 15 điểm thô e_t:
+      t=1:  e=-1.2  (đứng yên, ít quan trọng)
+      t=2:  e=-0.8
+      t=3:  e= 0.2  (bắt đầu cử động)
+      t=4:  e= 1.1  (tiến lại gần)
+      t=5:  e= 2.3  (tay giơ lên → rất quan trọng!)
+      t=6:  e= 3.1  (CÚ ĐẤM → quan trọng nhất!)
+      t=7:  e= 2.8  (ngay sau đấm → quan trọng)
+      t=8:  e= 2.1  (người B ngã)
+      t=9:  e= 1.4
+      t=10: e= 0.6
+      t=11: e=-0.3
+      t=12: e=-0.7
+      t=13: e=-0.9
+      t=14: e=-1.1
+      t=15: e=-0.8
+
+--- Softmax → trọng số α_t (tổng = 1.0) ---
+
+      t=1:  α= 0.01
+      t=2:  α= 0.01
+      t=3:  α= 0.03
+      t=4:  α= 0.08
+      t=5:  α= 0.19   ← chú ý cao
+      t=6:  α= 0.27   ← CHÚ Ý CAO NHẤT (cú đấm)
+      t=7:  α= 0.22   ← chú ý cao
+      t=8:  α= 0.12
+      t=9:  α= 0.04
+      t=10: α= 0.02
+      t=11..15: α≈0.01 mỗi cái
+      Tổng = 1.00 ✓
+
+--- Tính context vector ---
+   context = 0.01×h1 + 0.01×h2 + ... + 0.27×h6 + 0.22×h7 + ...
+
+   Vector context 256 chiều này nặng về thông tin ở t=5,6,7
+   → Tức là nặng về thông tin của cú đấm.
+
+Kết quả: (1, 256) — 1 vector tóm tắt toàn bộ window, tập trung vào đấm
+
+
+==============================================================================
+BƯỚC 9 — ĐƯA VÀO MODEL: PHẦN FC CLASSIFIER
+==============================================================================
+
+Input: context vector (1, 256)
+
+   256 → Linear(128) → BN → ReLU → Dropout(0.4)
+       → Linear(64)  → ReLU → Dropout(0.3)
+       → Linear(2)   → logits
+
+   Giả sử logits ra: [-1.82,  2.74]
+                      ↑NV       ↑V
+
+   Softmax:
+      P(non-violence) = exp(-1.82) / (exp(-1.82) + exp(2.74))
+                     = 0.162 / (0.162 + 15.49)
+                     = 0.0103  ≈  1.0%
+
+      P(violence)     = 15.49 / 15.652
+                     = 0.9897  ≈  99.0%
+
+   Ngưỡng 0.45:
+      P(violence) = 99.0% ≥ 45% → Window 8 = BẠO LỰC ✓
+
+
+==============================================================================
+BƯỚC 10 — LẶP LẠI CHO TẤT CẢ WINDOWS
+==============================================================================
+
+Track 1 có 25 windows. Model cho kết quả từng window:
+
+   Window  1 (frame  0- 29): P(V)= 3.2%  → Không bạo lực  (2 người đứng)
+   Window  2 (frame  5- 34): P(V)= 4.1%  → Không bạo lực
+   Window  3 (frame 10- 39): P(V)= 7.8%  → Không bạo lực
+   Window  4 (frame 15- 44): P(V)=18.3%  → Không bạo lực  (bắt đầu cử động)
+   Window  5 (frame 20- 49): P(V)=42.1%  → Không bạo lực  (tiến lại gần)
+   Window  6 (frame 25- 54): P(V)=81.4%  → BẠO LỰC ✓     (đẩy + đấm!)
+   Window  7 (frame 30- 59): P(V)=94.7%  → BẠO LỰC ✓     (đang đấm)
+   Window  8 (frame 35- 64): P(V)=99.0%  → BẠO LỰC ✓     (cú đấm chính)
+   Window  9 (frame 40- 69): P(V)=88.5%  → BẠO LỰC ✓     (ngã)
+   Window 10 (frame 45- 74): P(V)=76.2%  → BẠO LỰC ✓     (hậu quả)
+   Window 11 (frame 50- 79): P(V)=62.4%  → BẠO LỰC ✓
+   Window 12 (frame 55- 84): P(V)=54.3%  → BẠO LỰC ✓
+   Window 13 (frame 60- 89): P(V)=41.2%  → Không bạo lực  (yên lại)
+   Window 14 (frame 65- 94): P(V)=28.6%  → Không bạo lực
+   ...
+   Window 25 (frame120-149): P(V)= 5.4%  → Không bạo lực
+
+   → Trung bình P(violence) toàn track: ~47.8%
+   → Kết luận track: is_violence = True  (47.8% ≥ 45%)
+
+Track 2 (Người B - nạn nhân) cũng phân tích tương tự:
+   → Có nhiều windows P(V) cao khi bị đấm/ngã
+   → Kết luận track: is_violence = True
+
+
+==============================================================================
+BƯỚC 11 — QUYẾT ĐỊNH CUỐI CÙNG CHO VIDEO  (check_violence_ratio)
+==============================================================================
+
+   Tổng tracks hợp lệ: 2
+   Tracks bị phán là violence: 2
+
+   Tỷ lệ = 2/2 = 100% ≥ 70% (ngưỡng video-level)
+
+   ┌─────────────────────────────────────────┐
+   │   KẾT LUẬN: VIDEO NÀY CÓ BẠO LỰC  🚨   │
+   │   Confidence: ~99% (window đấm)         │
+   │   → Phát cảnh báo (winsound.Beep)       │
+   └─────────────────────────────────────────┘
+
+   In ra terminal:
+      [VIOLENCE DETECTED] v_example.mp4
+      Violence ratio: 2/2 tracks (100.0%)
+      Avg violence prob: 47.8%
+
+
+==============================================================================
+TẠI SAO CẦN NGƯỠNG 2 TẦNG?
+==============================================================================
+
+   Tầng 1 — Track level (P(V) ≥ 0.45):
+      Tránh bị đánh lừa bởi 1 window nhiễu.
+      Ví dụ: học sinh chạy nhanh qua 1 window ngắn → P(V)=60%
+      Nhưng trung bình cả track chỉ 30% → KHÔNG BẠO LỰC ✓
+
+   Tầng 2 — Video level (≥70% tracks violence):
+      Tránh false positive do 1 track đơn lẻ.
+      Ví dụ: 1/5 tracks bị nhiễu → 20% < 70% → KHÔNG BẠO LỰC ✓
+      Chỉ khi đa số người trong video đều có biểu hiện bạo lực
+      mới kết luận là video bạo lực.
+
+
+==============================================================================
+TỔNG KẾT TOÀN BỘ QUÁ TRÌNH
+==============================================================================
+
+   video v_example.mp4 (5 giây, 60fps)
+        │
+        ▼ [Chuẩn hóa FPS 60→30]
+   150 frame chuẩn
+        │
+        ▼ [YOLO detect + ByteTrack]
+   Track 1 (Người A): 150 bbox
+   Track 2 (Người B): 150 bbox
+        │
+        ▼ [Crop + Resize 96×96 + Normalize]
+   v_example_t1.npy: (150, 3, 96, 96)
+   v_example_t2.npy: (150, 3, 96, 96)
+        │
+        ▼ [Sliding Window: step=5]
+   50 windows tổng (25 × 2 tracks)
+        │
+        ▼ [Model: CNN → Conv1D → BiLSTM → Attention → FC]
+   50 kết quả P(violence) mỗi window
+        │
+        ▼ [Track-level: avg P(V) ≥ 0.45?]
+   Track 1: is_violence = True
+   Track 2: is_violence = True
+        │
+        ▼ [Video-level: ≥70% tracks violence?]
+   2/2 = 100% ≥ 70%
+        │
+        ▼
+   🚨 KẾT LUẬN: BẠO LỰC
+
+   Tổng thời gian xử lý (CPU): ~8-15 giây / 1 video 5 giây
+   Tổng thời gian xử lý (GPU): ~2-4 giây / 1 video 5 giây
+
+==============================================================================
