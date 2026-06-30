@@ -9,6 +9,7 @@
 - [Tổng quan](#-tổng-quan)
 - [Kiến trúc hệ thống](#-kiến-trúc-hệ-thống)
 - [Mô hình AI](#-mô-hình-ai)
+- [Dataset](#-dataset)
 - [Backend API](#-backend-api)
 - [Ứng dụng Flutter — SafeWatch](#-ứng-dụng-flutter--safewatch)
 - [Kết quả thực nghiệm](#-kết-quả-thực-nghiệm)
@@ -205,6 +206,60 @@ Backend xây dựng bằng **FastAPI**, cung cấp các endpoint:
 | `pdf` + `printing` | Xuất báo cáo PDF |
 | `intl` | Format ngày giờ |
 | `percent_indicator` | Thanh tiến trình |
+
+---
+
+## 📦 Dataset
+
+### Tải xuống
+
+> 📥 **Download dataset tại [GitHub Releases](https://github.com/MinhkhoaDS22/dectect_violence_in_school/releases)**
+
+Dataset bao gồm file `data_labels.zip` chứa toàn bộ video gốc và annotation labels.
+
+### Thông tin dataset
+
+| Thông tin | Chi tiết |
+|---|---|
+| **Tổng số video** | 300 video |
+| **Phân loại** | Violence (bạo lực) + Non-Violence (không bạo lực) |
+| **Nguồn** | Thu thập từ môi trường trường học |
+| **Annotation** | Bounding box theo frame cho từng người (CVAT format — XML) |
+| **FPS gốc** | Đa dạng, được chuẩn hoá về 30 FPS khi tiền xử lý |
+
+### Cấu trúc sau khi giải nén
+
+```
+data_labels/
+├── data/
+│   ├── violence/              # Video có hành vi bạo lực
+│   │   ├── video_001.mp4
+│   │   ├── video_002.mp4
+│   │   └── ...
+│   └── non_violence/          # Video không có bạo lực
+│       ├── video_001.mp4
+│       ├── video_002.mp4
+│       └── ...
+└── fix_labels/                # Annotation XML (CVAT format)
+    ├── violence/
+    │   ├── video_001.xml
+    │   └── ...
+    └── non_violence/
+        ├── video_001.xml
+        └── ...
+```
+
+### Chia dữ liệu
+
+Dữ liệu được chia theo **video** (không theo track) để tránh data leakage:
+
+| Tập | Tỷ lệ | Mục đích |
+|---|---|---|
+| **Train** | 70% | Huấn luyện mô hình |
+| **Validation** | 20% | Điều chỉnh hyperparameter, early stopping |
+| **Test** | 10% | Đánh giá hiệu suất cuối cùng |
+
+> ⚠️ **Lưu ý**: 300 video → ~500-800 tracks → ~2000+ sliding windows (mỗi window = 30 frame = 1 giây).
 
 ---
 
