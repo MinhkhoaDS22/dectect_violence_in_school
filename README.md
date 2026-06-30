@@ -227,25 +227,25 @@ Dataset bao gồm file `data_labels.zip` chứa toàn bộ video gốc và annot
 | **Annotation** | Bounding box theo frame cho từng người (CVAT format — XML) |
 | **FPS gốc** | Đa dạng, được chuẩn hoá về 30 FPS khi tiền xử lý |
 
-### Cấu trúc sau khi giải nén
+### Cấu trúc bên trong `data_labels.zip`
 
 ```
-data_labels/
+data_labels.zip
 ├── data/
 │   ├── violence/              # Video có hành vi bạo lực
-│   │   ├── video_001.mp4
-│   │   ├── video_002.mp4
+│   │   ├── v_001.mp4
+│   │   ├── v_002.mp4
 │   │   └── ...
 │   └── non_violence/          # Video không có bạo lực
-│       ├── video_001.mp4
-│       ├── video_002.mp4
+│       ├── nv_001.mp4
+│       ├── nv_002.mp4
 │       └── ...
 └── fix_labels/                # Annotation XML (CVAT format)
     ├── violence/
-    │   ├── video_001.xml
+    │   ├── v_001.xml
     │   └── ...
     └── non_violence/
-        ├── video_001.xml
+        ├── nv_001.xml
         └── ...
 ```
 
