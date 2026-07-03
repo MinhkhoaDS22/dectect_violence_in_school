@@ -18,6 +18,10 @@ fixed_previews/
 labels/
 *.png
 
+# === Allow results/ directory ===
+!results/
+!results/*
+
 # === Archives ===
 *.rar
 *.zip
