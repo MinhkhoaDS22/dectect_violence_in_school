@@ -22,6 +22,10 @@ labels/
 !results/
 !results/*
 
+# === Allow test_result/ directory ===
+!test_result/
+!test_result/*
+
 # === Archives ===
 *.rar
 *.zip

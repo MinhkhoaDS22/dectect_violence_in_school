@@ -1,0 +1,206 @@
+══════════════════════════════════════════════════════════════════════
+       ĐÁNH GIÁ MODEL — BÁO CÁO CHI TIẾT
+══════════════════════════════════════════════════════════════════════
+
+Ngày      : 2026-06-30 11:03:00
+Model     : results\best_model.pth
+YOLO      : yolo11s.pt
+Device    : cpu
+Ngưỡng    : 45%
+Dataset   : 40 video (20 violence, 20 non-violence)
+Thư mục   : Test/
+
+──────────────────────────────────────────────────────────────────────
+HƯỚNG 1: SLIDING WINDOW (Video-level, IMG_SIZE=96)
+──────────────────────────────────────────────────────────────────────
+
+Tiêu chí    : > 45% windows violence → video = violence
+Tổng video  : 40
+Tổng windows: 11079
+Accuracy    : 77.50%
+
+Classification Report:
+              precision    recall  f1-score   support
+
+Non-Violence       0.92      0.60      0.73        20
+    Violence       0.70      0.95      0.81        20
+
+    accuracy                           0.78        40
+   macro avg       0.81      0.77      0.77        40
+weighted avg       0.81      0.78      0.77        40
+
+Chi tiết từng video:
+  ✅ violence/t_v_001.mp4 [Violence] → Pred: Violence | 906/1059 windows violence (85.6%)
+  ✅ violence/t_v_002.mp4 [Violence] → Pred: Violence | 241/241 windows violence (100.0%)
+  ✅ violence/t_v_003.mp4 [Violence] → Pred: Violence | 1146/2041 windows violence (56.1%)
+  ✅ violence/t_v_004.mp4 [Violence] → Pred: Violence | 104/156 windows violence (66.7%)
+  ✅ violence/t_v_005.mp4 [Violence] → Pred: Violence | 120/121 windows violence (99.2%)
+  ✅ violence/t_v_006.mp4 [Violence] → Pred: Violence | 200/222 windows violence (90.1%)
+  ✅ violence/t_v_007.mp4 [Violence] → Pred: Violence | 427/436 windows violence (97.9%)
+  ✅ violence/t_v_008.mp4 [Violence] → Pred: Violence | 618/719 windows violence (86.0%)
+  ✅ violence/t_v_009.mp4 [Violence] → Pred: Violence | 134/135 windows violence (99.3%)
+  ✅ violence/t_v_010.mp4 [Violence] → Pred: Violence | 249/258 windows violence (96.5%)
+  ✅ violence/t_v_011.mp4 [Violence] → Pred: Violence | 275/275 windows violence (100.0%)
+  ✅ violence/t_v_012.mp4 [Violence] → Pred: Violence | 123/145 windows violence (84.8%)
+  ✅ violence/t_v_013.mp4 [Violence] → Pred: Violence | 111/132 windows violence (84.1%)
+  ❌ violence/t_v_014.mp4 [Violence] → Pred: Non-Violence | 22/130 windows violence (16.9%)
+  ✅ violence/t_v_015.mp4 [Violence] → Pred: Violence | 146/146 windows violence (100.0%)
+  ✅ violence/t_v_016.mp4 [Violence] → Pred: Violence | 114/116 windows violence (98.3%)
+  ✅ violence/t_v_017.mp4 [Violence] → Pred: Violence | 201/211 windows violence (95.3%)
+  ✅ violence/t_v_018.mp4 [Violence] → Pred: Violence | 127/143 windows violence (88.8%)
+  ✅ violence/t_v_019.mp4 [Violence] → Pred: Violence | 270/294 windows violence (91.8%)
+  ✅ violence/t_v_020.mp4 [Violence] → Pred: Violence | 360/619 windows violence (58.2%)
+  ✅ non_violence/t_nv_001.mp4 [Non-Violence] → Pred: Non-Violence | 19/62 windows violence (30.6%)
+  ✅ non_violence/t_nv_002.mp4 [Non-Violence] → Pred: Non-Violence | 66/222 windows violence (29.7%)
+  ❌ non_violence/t_nv_003.mp4 [Non-Violence] → Pred: Violence | 67/67 windows violence (100.0%)
+  ❌ non_violence/t_nv_004.mp4 [Non-Violence] → Pred: Violence | 146/202 windows violence (72.3%)
+  ✅ non_violence/t_nv_005.mp4 [Non-Violence] → Pred: Non-Violence | 1/78 windows violence (1.3%)
+  ❌ non_violence/t_nv_006.mp4 [Non-Violence] → Pred: Violence | 53/90 windows violence (58.9%)
+  ❌ non_violence/t_nv_007.mp4 [Non-Violence] → Pred: Violence | 86/130 windows violence (66.2%)
+  ✅ non_violence/t_nv_008.mp4 [Non-Violence] → Pred: Non-Violence | 14/90 windows violence (15.6%)
+  ✅ non_violence/t_nv_009.mp4 [Non-Violence] → Pred: Non-Violence | 24/114 windows violence (21.1%)
+  ❌ non_violence/t_nv_010.mp4 [Non-Violence] → Pred: Violence | 319/345 windows violence (92.5%)
+  ✅ non_violence/t_nv_011.mp4 [Non-Violence] → Pred: Non-Violence | 35/168 windows violence (20.8%)
+  ❌ non_violence/t_nv_012.mp4 [Non-Violence] → Pred: Violence | 247/255 windows violence (96.9%)
+  ✅ non_violence/t_nv_013.mp4 [Non-Violence] → Pred: Non-Violence | 19/47 windows violence (40.4%)
+  ❌ non_violence/t_nv_014.mp4 [Non-Violence] → Pred: Violence | 81/81 windows violence (100.0%)
+  ✅ non_violence/t_nv_015.mp4 [Non-Violence] → Pred: Non-Violence | 76/288 windows violence (26.4%)
+  ❌ non_violence/t_nv_016.mp4 [Non-Violence] → Pred: Violence | 101/107 windows violence (94.4%)
+  ✅ non_violence/t_nv_017.mp4 [Non-Violence] → Pred: Non-Violence | 10/140 windows violence (7.1%)
+  ✅ non_violence/t_nv_018.mp4 [Non-Violence] → Pred: Non-Violence | 0/425 windows violence (0.0%)
+  ✅ non_violence/t_nv_019.mp4 [Non-Violence] → Pred: Non-Violence | 0/33 windows violence (0.0%)
+  ✅ non_violence/t_nv_020.mp4 [Non-Violence] → Pred: Non-Violence | 133/536 windows violence (24.8%)
+
+──────────────────────────────────────────────────────────────────────
+HƯỚNG 2: FULL APP PIPELINE (Video-level, IMG_SIZE=64)
+──────────────────────────────────────────────────────────────────────
+
+Tổng video   : 40
+Accuracy     : 90.00%
+
+Classification Report:
+              precision    recall  f1-score   support
+
+Non-Violence       0.90      0.90      0.90        20
+    Violence       0.90      0.90      0.90        20
+
+    accuracy                           0.90        40
+   macro avg       0.90      0.90      0.90        40
+weighted avg       0.90      0.90      0.90        40
+
+Chi tiết từng video:
+  ✅ violence/t_v_001.mp4 [Violence] → Pred: Violence | ratio=0.666 | max_persons=6 | segments=16
+  ✅ violence/t_v_002.mp4 [Violence] → Pred: Violence | ratio=0.811 | max_persons=4 | segments=10
+  ✅ violence/t_v_003.mp4 [Violence] → Pred: Violence | ratio=0.683 | max_persons=6 | segments=23
+  ✅ violence/t_v_004.mp4 [Violence] → Pred: Violence | ratio=0.373 | max_persons=2 | segments=3
+  ❌ violence/t_v_005.mp4 [Violence] → Pred: Non-Violence | ratio=0.258 | max_persons=1 | segments=0
+  ✅ violence/t_v_006.mp4 [Violence] → Pred: Violence | ratio=0.644 | max_persons=3 | segments=5
+  ✅ violence/t_v_007.mp4 [Violence] → Pred: Violence | ratio=0.668 | max_persons=4 | segments=15
+  ✅ violence/t_v_008.mp4 [Violence] → Pred: Violence | ratio=0.697 | max_persons=4 | segments=19
+  ✅ violence/t_v_009.mp4 [Violence] → Pred: Violence | ratio=0.819 | max_persons=4 | segments=5
+  ✅ violence/t_v_010.mp4 [Violence] → Pred: Violence | ratio=0.509 | max_persons=3 | segments=6
+  ✅ violence/t_v_011.mp4 [Violence] → Pred: Violence | ratio=0.693 | max_persons=3 | segments=10
+  ✅ violence/t_v_012.mp4 [Violence] → Pred: Violence | ratio=0.469 | max_persons=3 | segments=2
+  ✅ violence/t_v_013.mp4 [Violence] → Pred: Violence | ratio=0.485 | max_persons=3 | segments=4
+  ❌ violence/t_v_014.mp4 [Violence] → Pred: Non-Violence | ratio=0.124 | max_persons=2 | segments=0
+  ✅ violence/t_v_015.mp4 [Violence] → Pred: Violence | ratio=0.687 | max_persons=4 | segments=6
+  ✅ violence/t_v_016.mp4 [Violence] → Pred: Violence | ratio=0.568 | max_persons=2 | segments=4
+  ✅ violence/t_v_017.mp4 [Violence] → Pred: Violence | ratio=0.848 | max_persons=5 | segments=4
+  ✅ violence/t_v_018.mp4 [Violence] → Pred: Violence | ratio=0.728 | max_persons=3 | segments=6
+  ✅ violence/t_v_019.mp4 [Violence] → Pred: Violence | ratio=0.815 | max_persons=4 | segments=8
+  ✅ violence/t_v_020.mp4 [Violence] → Pred: Violence | ratio=0.575 | max_persons=3 | segments=7
+  ✅ non_violence/t_nv_001.mp4 [Non-Violence] → Pred: Non-Violence | ratio=0.513 | max_persons=3 | segments=0
+  ✅ non_violence/t_nv_002.mp4 [Non-Violence] → Pred: Non-Violence | ratio=0.239 | max_persons=2 | segments=0
+  ✅ non_violence/t_nv_003.mp4 [Non-Violence] → Pred: Non-Violence | ratio=0.391 | max_persons=2 | segments=0
+  ✅ non_violence/t_nv_004.mp4 [Non-Violence] → Pred: Non-Violence | ratio=0.000 | max_persons=0 | segments=0
+  ✅ non_violence/t_nv_005.mp4 [Non-Violence] → Pred: Non-Violence | ratio=0.477 | max_persons=2 | segments=0
+  ✅ non_violence/t_nv_006.mp4 [Non-Violence] → Pred: Non-Violence | ratio=0.375 | max_persons=4 | segments=0
+  ✅ non_violence/t_nv_007.mp4 [Non-Violence] → Pred: Non-Violence | ratio=0.309 | max_persons=4 | segments=0
+  ✅ non_violence/t_nv_008.mp4 [Non-Violence] → Pred: Non-Violence | ratio=0.247 | max_persons=2 | segments=0
+  ✅ non_violence/t_nv_009.mp4 [Non-Violence] → Pred: Non-Violence | ratio=0.084 | max_persons=2 | segments=0
+  ✅ non_violence/t_nv_010.mp4 [Non-Violence] → Pred: Non-Violence | ratio=0.440 | max_persons=3 | segments=0
+  ✅ non_violence/t_nv_011.mp4 [Non-Violence] → Pred: Non-Violence | ratio=0.054 | max_persons=2 | segments=0
+  ❌ non_violence/t_nv_012.mp4 [Non-Violence] → Pred: Violence | ratio=0.642 | max_persons=4 | segments=7
+  ✅ non_violence/t_nv_013.mp4 [Non-Violence] → Pred: Non-Violence | ratio=0.080 | max_persons=1 | segments=0
+  ✅ non_violence/t_nv_014.mp4 [Non-Violence] → Pred: Non-Violence | ratio=0.488 | max_persons=1 | segments=0
+  ✅ non_violence/t_nv_015.mp4 [Non-Violence] → Pred: Non-Violence | ratio=0.155 | max_persons=2 | segments=0
+  ❌ non_violence/t_nv_016.mp4 [Non-Violence] → Pred: Violence | ratio=0.639 | max_persons=2 | segments=2
+  ✅ non_violence/t_nv_017.mp4 [Non-Violence] → Pred: Non-Violence | ratio=0.000 | max_persons=0 | segments=0
+  ✅ non_violence/t_nv_018.mp4 [Non-Violence] → Pred: Non-Violence | ratio=0.000 | max_persons=0 | segments=0
+  ✅ non_violence/t_nv_019.mp4 [Non-Violence] → Pred: Non-Violence | ratio=0.000 | max_persons=0 | segments=0
+  ✅ non_violence/t_nv_020.mp4 [Non-Violence] → Pred: Non-Violence | ratio=0.245 | max_persons=2 | segments=0
+
+──────────────────────────────────────────────────────────────────────
+HƯỚNG 3: NO SLIDING WINDOW (Track-level, IMG_SIZE=96)
+──────────────────────────────────────────────────────────────────────
+
+Tổng tracks  : 150
+Accuracy     : 79.33%
+
+Classification Report:
+              precision    recall  f1-score   support
+
+Non-Violence       0.85      0.63      0.73        65
+    Violence       0.76      0.92      0.83        85
+
+    accuracy                           0.79       150
+   macro avg       0.81      0.77      0.78       150
+weighted avg       0.80      0.79      0.79       150
+
+Chi tiết từng video:
+  violence/t_v_001.mp4 [Violence]: 8 tracks, 8 đúng (100.0%)
+  violence/t_v_002.mp4 [Violence]: 5 tracks, 5 đúng (100.0%)
+  violence/t_v_003.mp4 [Violence]: 8 tracks, 8 đúng (100.0%)
+  violence/t_v_004.mp4 [Violence]: 2 tracks, 1 đúng (50.0%)
+  violence/t_v_005.mp4 [Violence]: 1 tracks, 1 đúng (100.0%)
+  violence/t_v_006.mp4 [Violence]: 3 tracks, 3 đúng (100.0%)
+  violence/t_v_007.mp4 [Violence]: 5 tracks, 5 đúng (100.0%)
+  violence/t_v_008.mp4 [Violence]: 4 tracks, 4 đúng (100.0%)
+  violence/t_v_009.mp4 [Violence]: 5 tracks, 5 đúng (100.0%)
+  violence/t_v_010.mp4 [Violence]: 3 tracks, 3 đúng (100.0%)
+  violence/t_v_011.mp4 [Violence]: 3 tracks, 3 đúng (100.0%)
+  violence/t_v_012.mp4 [Violence]: 5 tracks, 5 đúng (100.0%)
+  violence/t_v_013.mp4 [Violence]: 3 tracks, 3 đúng (100.0%)
+  violence/t_v_014.mp4 [Violence]: 2 tracks, 0 đúng (0.0%)
+  violence/t_v_015.mp4 [Violence]: 4 tracks, 4 đúng (100.0%)
+  violence/t_v_016.mp4 [Violence]: 2 tracks, 2 đúng (100.0%)
+  violence/t_v_017.mp4 [Violence]: 7 tracks, 6 đúng (85.7%)
+  violence/t_v_018.mp4 [Violence]: 4 tracks, 4 đúng (100.0%)
+  violence/t_v_019.mp4 [Violence]: 5 tracks, 5 đúng (100.0%)
+  violence/t_v_020.mp4 [Violence]: 6 tracks, 3 đúng (50.0%)
+  non_violence/t_nv_001.mp4 [Non-Violence]: 5 tracks, 4 đúng (80.0%)
+  non_violence/t_nv_002.mp4 [Non-Violence]: 4 tracks, 1 đúng (25.0%)
+  non_violence/t_nv_003.mp4 [Non-Violence]: 2 tracks, 0 đúng (0.0%)
+  non_violence/t_nv_004.mp4 [Non-Violence]: 2 tracks, 0 đúng (0.0%)
+  non_violence/t_nv_005.mp4 [Non-Violence]: 4 tracks, 4 đúng (100.0%)
+  non_violence/t_nv_006.mp4 [Non-Violence]: 5 tracks, 3 đúng (60.0%)
+  non_violence/t_nv_007.mp4 [Non-Violence]: 5 tracks, 2 đúng (40.0%)
+  non_violence/t_nv_008.mp4 [Non-Violence]: 3 tracks, 3 đúng (100.0%)
+  non_violence/t_nv_009.mp4 [Non-Violence]: 4 tracks, 4 đúng (100.0%)
+  non_violence/t_nv_010.mp4 [Non-Violence]: 3 tracks, 2 đúng (66.7%)
+  non_violence/t_nv_011.mp4 [Non-Violence]: 3 tracks, 3 đúng (100.0%)
+  non_violence/t_nv_012.mp4 [Non-Violence]: 4 tracks, 0 đúng (0.0%)
+  non_violence/t_nv_013.mp4 [Non-Violence]: 1 tracks, 0 đúng (0.0%)
+  non_violence/t_nv_014.mp4 [Non-Violence]: 1 tracks, 0 đúng (0.0%)
+  non_violence/t_nv_015.mp4 [Non-Violence]: 2 tracks, 1 đúng (50.0%)
+  non_violence/t_nv_016.mp4 [Non-Violence]: 2 tracks, 1 đúng (50.0%)
+  non_violence/t_nv_017.mp4 [Non-Violence]: 2 tracks, 2 đúng (100.0%)
+  non_violence/t_nv_018.mp4 [Non-Violence]: 5 tracks, 5 đúng (100.0%)
+  non_violence/t_nv_019.mp4 [Non-Violence]: 4 tracks, 4 đúng (100.0%)
+  non_violence/t_nv_020.mp4 [Non-Violence]: 4 tracks, 2 đúng (50.0%)
+
+──────────────────────────────────────────────────────────────────────
+SO SÁNH 3 HƯỚNG
+──────────────────────────────────────────────────────────────────────
+
+Metric                       Hướng 1    Hướng 2    Hướng 3
+-------------------------------------------------------
+Accuracy (%)                   77.50      90.00      79.33
+F1 Violence (%)                80.85      90.00      83.42
+Precision V (%)                70.37      90.00      76.47
+Recall V (%)                   95.00      90.00      91.76
+F1 Non-Violence (%)            72.73      90.00      72.57
+
+══════════════════════════════════════════════════════════════════════
+KẾT THÚC BÁO CÁO
+══════════════════════════════════════════════════════════════════════

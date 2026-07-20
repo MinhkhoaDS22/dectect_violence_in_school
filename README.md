@@ -1,6 +1,6 @@
 # 🛡️ Detect Violence in School — SafeWatch
 
-> **Đồ án tốt nghiệp HUTECH 2026** — Hệ thống phát hiện hành vi bạo lực trong môi trường học đường sử dụng Deep Learning, với ứng dụng Flutter và backend FastAPI.
+> **Đồ án tốt nghiệp HUTECH 2026** — Hệ thống **End-to-End** phát hiện hành vi bạo lực trong môi trường học đường sử dụng Deep Learning, tích hợp hoàn chỉnh từ Camera → AI → Cảnh báo tức thì.
 
 📄 **[Báo cáo đồ án đầy đủ (PDF)](./report_DATN.pdf)**
 
@@ -9,15 +9,16 @@
 ## 📋 Mục lục
 
 - [Tổng quan](#-tổng-quan)
+- [Demo End-to-End](#-demo-end-to-end)
 - [Pipeline tổng thể](#-pipeline-tổng-thể)
-- [Pipeline Huấn luyện](#-pipeline-1-huấn-luyện-mô-hình)
+- [Pipeline 1 — Huấn luyện](#-pipeline-1-huấn-luyện-mô-hình)
 - [Kiến trúc mô hình AI](#-kiến-trúc-mô-hình-ai--cnn-bilstm-attention)
-- [Pipeline Ứng dụng](#-pipeline-2-ứng-dụng-thực-tế--safewatch-inference)
+- [Pipeline 2 — Ứng dụng SafeWatch](#-pipeline-2-ứng-dụng-thực-tế--safewatch-inference)
 - [Kiến trúc hệ thống](#-kiến-trúc-hệ-thống)
+- [Giao diện ứng dụng](#-giao-diện-ứng-dụng--safewatch)
+- [Kết quả thực nghiệm](#-kết-quả-thực-nghiệm)
 - [Dataset](#-dataset)
 - [Backend API](#-backend-api)
-- [Ứng dụng Flutter — SafeWatch](#-ứng-dụng-flutter--safewatch)
-- [Kết quả thực nghiệm](#-kết-quả-thực-nghiệm)
 - [Cài đặt và chạy](#-cài-đặt-và-chạy)
 - [Cấu trúc thư mục](#-cấu-trúc-thư-mục)
 - [Công nghệ sử dụng](#-công-nghệ-sử-dụng)
@@ -26,29 +27,73 @@
 
 ## 🎯 Tổng quan
 
-**SafeWatch** là hệ thống phát hiện bạo lực trong trường học theo thời gian thực, bao gồm 3 thành phần chính:
+**SafeWatch** là hệ thống **End-to-End** phát hiện bạo lực học đường theo thời gian thực. Toàn bộ luồng từ đầu vào đến đầu ra được tích hợp liền mạch trong một hệ thống duy nhất:
 
-| Thành phần | Mô tả |
-|---|---|
-| **AI Model** | Mô hình CNN-BiLSTM-Attention (~2.8M params) huấn luyện trên dữ liệu video bạo lực/không bạo lực |
-| **Backend** | FastAPI server xử lý video upload, chạy detection, cắt clip, gửi cảnh báo |
-| **Flutter App** | Ứng dụng web SafeWatch — upload video, xem kết quả, quản lý cảnh báo |
+| Thành phần | Công nghệ | Mô tả |
+|---|---|---|
+| **AI Model** | CNN-BiLSTM-Attention (~2.8M params) | Phân loại bạo lực từ chuỗi video 30 frame |
+| **Object Tracking** | YOLO11s + ByteTrack | Phát hiện và theo dõi từng người trong video |
+| **Backend** | FastAPI + Python | Xử lý video, chạy AI inference, quản lý cảnh báo |
+| **Frontend** | Flutter Web | Giao diện upload, dashboard, lịch sử cảnh báo |
+| **Alerting** | Gmail SMTP + Telegram Bot | Thông báo đa kênh ngay khi phát hiện |
+
+---
+
+## 🔗 Demo End-to-End
+
+Toàn bộ hệ thống hoạt động theo một luồng **khép kín hoàn toàn tự động**. Người dùng chỉ cần upload video — phần còn lại hệ thống tự xử lý:
+
+```
+📹 Video từ camera/upload
+        │
+        ▼
+[Flutter Web App]  ──→  Upload qua HTTP API
+        │
+        ▼
+[FastAPI Backend]  ──→  Task Queue FIFO (xử lý nhiều camera đồng thời)
+        │
+        ▼
+[YOLO11s + ByteTrack]  ──→  Detect + Track từng người (1 lần đọc video)
+        │
+        ▼
+[CNN-BiLSTM-Attention]  ──→  Phân tích 30-frame window cho từng người
+        │
+        ▼
+[Multi-level Decision]  ──→  Track-level + MAX Aggregation + Consecutive Check
+        │
+    ┌───┴───┐
+    ▼       ▼
+[BẠO LỰC]  [AN TOÀN]
+    │           │
+    ▼           ▼
+✂️ Cắt clip   📊 Dashboard
+📧 Email       cập nhật
+📱 Telegram
+🔊 Còi hú
+```
+
+**Điểm nổi bật End-to-End:**
+- ✅ **Zero-touch**: Upload xong → hệ thống tự chạy, không cần thao tác thêm
+- ✅ **Multi-camera**: Hàng đợi FIFO xử lý nhiều video tuần tự, không tràn RAM
+- ✅ **Single-pass I/O**: Mỗi video chỉ được đọc **một lần duy nhất** — tối ưu hiệu suất
+- ✅ **Real-time feedback**: Trạng thái Processing cập nhật ngay trên UI
+- ✅ **Multi-channel alert**: Email + Telegram + Siren âm thanh đồng thời
 
 ---
 
 ## 🗺️ Pipeline Tổng Thể
 
-Hệ thống được chia làm **hai luồng hoàn toàn tách biệt**:
+Hệ thống gồm **hai luồng hoàn toàn tách biệt** — Training (offline) và Inference (online):
 
 ```mermaid
 flowchart LR
     subgraph P1["🎓 PIPELINE 1 — HUẤN LUYỆN (Offline)"]
         direction TB
-        D1["📹 389 Video thô\n(Violence / Non-Violence)"] --> T1["🏷️ Annotation\nCVAT + YOLO"]
+        D1["📹 389 Video thô\nViolence / Non-Violence"] --> T1["🏷️ Annotation\nCVAT + YOLO"]
         T1 --> T2["⚙️ Tiền xử lý\nCrop · Resize · ByteTrack · Sliding Window"]
-        T2 --> T3["🧠 Mô hình\nCNN-BiLSTM-Attention"]
-        T3 --> T4["📉 Tối ưu hóa\nAdamW · Focal Loss · MixUp"]
-        T4 --> W["💾 best_model.pth"]
+        T2 --> T3["🧠 CNN-BiLSTM-Attention\nForward Pass + Backprop"]
+        T3 --> T4["📉 Tối ưu hóa\nAdamW · Focal Loss · MixUp · Early Stopping"]
+        T4 --> W["💾 best_model.pth\n~2.8M params · ~8MB"]
     end
 
     subgraph P2["🚀 PIPELINE 2 — ỨNG DỤNG (Online / SafeWatch)"]
@@ -56,13 +101,13 @@ flowchart LR
         V1["📱 Flutter App\nUpload video"] --> V2["🔗 FastAPI Backend\nTask Queue FIFO"]
         V2 --> V3["👁️ YOLO11s + ByteTrack\nSingle-pass Tracking"]
         V3 --> V4["🪟 Sliding Window\nBatch Inference × 8"]
-        V4 --> V5["⚖️ Multi-level Decision\nTrack-level + MAX Aggregation"]
-        V5 -->|"🚨 Bạo lực"| V6["✂️ Cắt clip\n📧 Email · 📱 Telegram"]
-        V5 -->|"✅ An toàn"| V7["📊 Dashboard\nKhông cảnh báo"]
+        V4 --> V5["⚖️ Multi-level Decision\nTrack-level + MAX + Consecutive"]
+        V5 -->|"🚨 Bạo lực"| V6["✂️ Clip + 📧 Email\n📱 Telegram + 🔊 Siren"]
+        V5 -->|"✅ An toàn"| V7["📊 Dashboard Update"]
         V6 --> V7
     end
 
-    W -.->|"Load model"| V4
+    W -.->|"Load at startup"| V4
 ```
 
 ---
@@ -71,48 +116,48 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    A(["📁 INPUT\n389 video thô\n.mp4 — Violence / Non-Violence"]) --> B
+    A(["📁 INPUT\n389 video thô (.mp4)\nViolence / Non-Violence"]) --> B
 
-    subgraph B["BƯỚC 1 — Thu thập & Gán nhãn"]
+    subgraph B["BƯỚC 1 — Thu thập & Gán nhãn (Annotation)"]
         B1["🎥 Video thô (.mp4)"]
-        B2["🔲 CVAT Annotation Tool\n+ YOLO hỗ trợ tự động"]
-        B3["📄 XML files\nBounding box từng người × từng frame"]
+        B2["🔲 CVAT + YOLO\nBounding box tự động từng người × từng frame"]
+        B3["📄 Annotation XML\nTọa độ bounding box theo frame"]
         B1 --> B2 --> B3
     end
 
     B --> C
 
-    subgraph C["BƯỚC 2 — Tiền xử lý Không-Thời gian"]
-        C1["✂️ Crop từng người\ntheo bounding box"]
-        C2["📐 Resize về\n64×64 pixel"]
-        C3["🔗 ByteTrack\nLiên kết người xuyên suốt video"]
+    subgraph C["BƯỚC 2 — Tiền xử lý Không gian–Thời gian"]
+        C1["✂️ Crop từng người\ntheo bounding box CVAT"]
+        C2["📐 Resize → 64×64 pixel\nChuẩn hóa [0, 1]"]
+        C3["🔗 ByteTrack\nLiên kết cùng người xuyên suốt video"]
         C4["🪟 Sliding Window\nWindow=30 frame · Step=5 frame"]
-        C5["📦 NumPy Array 4D\n(Frames, C, W, H) — Normalized [0,1]"]
+        C5["📦 NumPy Array 4D\n(Frames, C, W, H) — ~2000+ windows"]
         C1 --> C2 --> C3 --> C4 --> C5
     end
 
     C --> D
 
-    subgraph D["BƯỚC 3 — Kiến trúc Mô hình (Forward Pass)"]
-        D1["🖼️ Spatial CNN\nTrích xuất đặc trưng không gian\nOutput: (B, 30, 256)"]
-        D2["📈 Multi-scale Conv1D\nk=3 · k=5 · k=7 song song\nOutput: (B, 15, 256)"]
-        D3["🔄 Bi-LSTM × 2 lớp\nPhân tích chuỗi 2 chiều\nOutput: (B, 15, 256)"]
-        D4["🎯 Temporal Attention\nTập trung frame quan trọng\nOutput: (B, 256)"]
-        D5["📊 FC Classifier\n256→128→64→2 → Softmax\nOutput: P(Violence) ∈ [0,1]"]
+    subgraph D["BƯỚC 3 — Forward Pass qua Mô hình"]
+        D1["🖼️ Spatial CNN\nTrích đặc trưng không gian\n→ (B, 30, 256)"]
+        D2["📈 Multi-scale Conv1D\nk=3·5·7 song song\n→ (B, 15, 256)"]
+        D3["🔄 Bi-LSTM × 2 lớp\nNgữ cảnh 2 chiều\n→ (B, 15, 256)"]
+        D4["🎯 Temporal Attention\nTập trung frame quan trọng\n→ (B, 256)"]
+        D5["📊 FC Classifier\n256→128→64→2 → Softmax\n→ P(Violence) ∈ [0,1]"]
         D1 --> D2 --> D3 --> D4 --> D5
     end
 
     D --> E
 
     subgraph E["BƯỚC 4 — Tối ưu hóa & Huấn luyện"]
-        E1["📐 Focal Loss\nγ=2.0 + Label Smoothing 0.1"]
-        E2["⚡ AdamW\nlr=2e-4 · Cosine Annealing"]
-        E3["🔀 MixUp α=0.2\n+ 7 Data Augmentation"]
-        E4["🛑 Early Stopping\nPatience=25 · Gradient Clip=1.0"]
+        E1["📐 Focal Loss γ=2.0\n+ Label Smoothing 0.1"]
+        E2["⚡ AdamW lr=2e-4\n+ Cosine Annealing"]
+        E3["🔀 MixUp α=0.2\n+ 7 kỹ thuật Augmentation"]
+        E4["🛑 Early Stopping\nPatience=25 · Grad Clip=1.0"]
         E1 --- E2 --- E3 --- E4
     end
 
-    E --> F(["💾 OUTPUT\nbest_model.pth\nTest Accuracy ~89%"])
+    E --> F(["💾 OUTPUT: best_model.pth\nTest Accuracy: 90% (Full Pipeline)\n~2.8M params · ~8MB"])
 ```
 
 ---
@@ -121,73 +166,61 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    IN(["📥 Input\n(Batch, 30 frames, 3, 64, 64)\n30 frame ảnh crop của 1 người ~ 1 giây video"])
+    IN(["📥 Input: (Batch, 30, 3, 64, 64)\n30 frame crop của 1 người ≈ 1 giây video"])
 
     subgraph CNN["🖼️ SPATIAL CNN — Trích xuất đặc trưng không gian"]
-        CN1["Block 1: Conv2D 3→32 + BN + ReLU + MaxPool\n96×96 → 48×48"]
-        CN2["Block 2: Conv2D 32→64 + BN + ReLU + MaxPool\n48×48 → 24×24"]
-        CN3["Block 3: Conv2D 64→128 + BN + ReLU + MaxPool\n24×24 → 12×12"]
-        CN4["Block 4: Conv2D 128→256 + AdaptiveAvgPool → 2×2\n+ Spatial Dropout(0.15)"]
-        CN5["FC: 1024 → 256 + Dropout(0.4)"]
+        CN1["Block 1: Conv2D 3→32 + BN + ReLU + MaxPool  ·  64×64 → 32×32"]
+        CN2["Block 2: Conv2D 32→64 + BN + ReLU + MaxPool  ·  32×32 → 16×16"]
+        CN3["Block 3: Conv2D 64→128 + BN + ReLU + MaxPool  ·  16×16 → 8×8"]
+        CN4["Block 4: Conv2D 128→256 + AdaptiveAvgPool(2×2) + SpatialDropout(0.15)"]
+        CN5["FC: 1024 → 256 + Dropout(0.4)   →   Output: (B, 30, 256)"]
         CN1 --> CN2 --> CN3 --> CN4 --> CN5
     end
 
-    subgraph MS["📈 MULTI-SCALE CONV1D — Đặc trưng chuyển động"]
-        MS1["Conv1D k=3 → 128ch\n~100ms: cú đấm, giật tay"]
-        MS2["Conv1D k=5 → 64ch\n~167ms: xô đẩy, ngã"]
-        MS3["Conv1D k=7 → 64ch\n~233ms: đuổi nhau, hành hung"]
-        MS4["Concat (128+64+64=256ch)\n+ MaxPool1D(2)\n30 timestep → 15 timestep"]
+    subgraph MS["📈 MULTI-SCALE CONV1D — Đặc trưng chuyển động đa tốc độ"]
+        MS1["Conv1D k=3 → 128ch  ·  ~100ms  ·  Cú đấm, giật tay đột ngột"]
+        MS2["Conv1D k=5 → 64ch   ·  ~167ms  ·  Xô đẩy, ngã, ngăn cản"]
+        MS3["Conv1D k=7 → 64ch   ·  ~233ms  ·  Đuổi nhau, hành hung kéo dài"]
+        MS4["Concat (256ch) + MaxPool1D(2)   →   Output: (B, 15, 256)"]
         MS1 & MS2 & MS3 --> MS4
     end
 
     subgraph BI["🔄 BI-LSTM — Hiểu ngữ cảnh 2 chiều"]
-        BL1["Forward LSTM\nframe 1→2→...→15\n(hidden=128)"]
-        BL2["Backward LSTM\nframe 15→14→...→1\n(hidden=128)"]
-        BL3["Concat: 128+128=256\nDropout(0.3) giữa 2 lớp\nOutput: (B, 15, 256)"]
+        BL1["→ Forward LSTM: frame 1→15  (hidden=128)"]
+        BL2["← Backward LSTM: frame 15→1  (hidden=128)"]
+        BL3["Concat 128+128=256  +  Dropout(0.3)   →   Output: (B, 15, 256)"]
         BL1 & BL2 --> BL3
     end
 
-    subgraph AT["🎯 TEMPORAL ATTENTION — Chú ý khoảnh khắc quan trọng"]
-        AT1["Linear(256→64) + Tanh\n→ điểm quan trọng e_t"]
-        AT2["Softmax(e_t)\n→ trọng số α_t, Σα=1"]
-        AT3["Context = Σ(αₜ × hₜ)\nOutput: (B, 256)"]
+    subgraph AT["🎯 TEMPORAL ATTENTION — Tập trung khoảnh khắc quan trọng"]
+        AT1["Linear(256→64) + Tanh → điểm quan trọng eₜ"]
+        AT2["Softmax(eₜ) → trọng số αₜ  (Σα = 1.0)"]
+        AT3["Context = Σ(αₜ × hₜ)   →   Output: (B, 256)"]
         AT1 --> AT2 --> AT3
     end
 
-    subgraph FC["📊 FC CLASSIFIER — Kết luận"]
+    subgraph FC["📊 FC CLASSIFIER — Ra quyết định"]
         FC1["Linear 256→128 + BN + ReLU + Dropout(0.4)"]
         FC2["Linear 128→64 + ReLU + Dropout(0.3)"]
-        FC3["Linear 64→2 → Softmax"]
+        FC3["Linear 64→2 → Softmax   →   [P(Non-Violence), P(Violence)]"]
         FC4{{"P(Violence) ≥ 0.45?"}}
         FC1 --> FC2 --> FC3 --> FC4
     end
 
     IN --> CNN --> MS --> BI --> AT --> FC
-    FC4 -->|"✅ Có"| OUT1(["🚨 BẠO LỰC"])
-    FC4 -->|"❌ Không"| OUT2(["✅ AN TOÀN"])
+    FC4 -->|"✅ YES"| OUT1(["🚨 BẠO LỰC"])
+    FC4 -->|"❌ NO"| OUT2(["✅ AN TOÀN"])
 ```
 
-### Thông số mô hình
+**Thông số mô hình:**
 
-| Thành phần | Chi tiết |
+| Thông số | Giá trị |
 |---|---|
-| **Tổng tham số** | ~2,800,000 (~2.8M) — 100% trainable |
-| **Kích thước file** | ~8 MB (float32) |
-| **Input** | (Batch, 30, 3, 64, 64) |
-| **Output** | P(Violence) ∈ [0, 1] |
-| **Ngưỡng quyết định** | ≥ 45% → Bạo lực |
-
-### Kỹ thuật huấn luyện
-
-| Kỹ thuật | Chi tiết |
-|---|---|
-| **Loss** | Focal Loss (γ=2.0) + Class Weights + Label Smoothing (0.1) |
-| **Optimizer** | AdamW (lr=2e-4, weight_decay=3e-4) |
-| **LR Schedule** | 5-epoch Warmup → Cosine Annealing Warm Restarts |
-| **MixUp** | α=0.2 — trộn 2 mẫu ngẫu nhiên, giảm overfitting |
-| **Augmentation** | Flip ngang · Temporal Reverse · Speed Variation · Brightness Jitter · Gaussian Noise · Random Erasing (7 kỹ thuật) |
-| **Early Stopping** | Patience = 25 epoch |
-| **Gradient Clipping** | max_norm = 1.0 |
+| Tổng tham số | ~2,800,000 (~2.8M) — 100% trainable |
+| Kích thước file | ~8 MB (float32) |
+| Input | `(Batch, 30, 3, 64, 64)` |
+| Output | `P(Violence) ∈ [0, 1]` |
+| Ngưỡng quyết định | ≥ 45% → Bạo lực |
 
 ---
 
@@ -195,69 +228,67 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    U(["👤 Người dùng\nFlutter Web App"]) --> S1
+    U(["👤 Người dùng — Flutter Web App\nUpload 1 hoặc nhiều video"]) --> S1
 
-    subgraph S1["BƯỚC 1 — Tiếp nhận & Hàng chờ"]
-        S1A["📤 Upload video qua UI"]
-        S1B["🔗 HTTP API (Dio → FastAPI)"]
-        S1C["📋 Task Queue FIFO\nXử lý tuần tự, tránh tràn RAM/VRAM"]
-        S1D["⏳ Trạng thái 'Processing'\nhiển thị realtime trên UI"]
+    subgraph S1["BƯỚC 1 — Tiếp nhận & Hàng chờ (Ingestion & Queue)"]
+        S1A["📤 Upload video qua giao diện Web"]
+        S1B["🔗 HTTP POST → FastAPI /api/analyze"]
+        S1C["📋 Task Queue FIFO\nXử lý tuần tự — không tràn RAM/VRAM\nGiám sát nhiều camera đồng thời"]
+        S1D["⏳ Trạng thái 'Processing' realtime trên UI"]
         S1A --> S1B --> S1C --> S1D
     end
 
     S1 --> S2
 
-    subgraph S2["BƯỚC 2 — Rút trích đối tượng (Single-pass Tracking)"]
-        S2A["🎥 Load video\n(chỉ đọc MỘT LẦN — tối ưu I/O)"]
-        S2B["👁️ YOLO11s\nPhát hiện người\nconf=0.38 · imgsz=320\nChạy mỗi 2 frame (~50% thời gian)"]
-        S2C["🔗 ByteTrack\nLiên kết người xuyên suốt video\n(Track ID ổn định)"]
-        S2D["✂️ Crop + Resize 64×64\nLưu vào RAM theo từng Track ID"]
+    subgraph S2["BƯỚC 2 — Single-pass Tracking (Tối ưu I/O)"]
+        S2A["🎥 Đọc video CHỈ MỘT LẦN từ đầu đến cuối"]
+        S2B["👁️ YOLO11s: Detect người\nconf=0.38 · imgsz=320\nChạy mỗi 2 frame → tiết kiệm ~50% thời gian CPU"]
+        S2C["🔗 ByteTrack: Liên kết Track ID\nổn định xuyên suốt video"]
+        S2D["✂️ Crop + Normalize 64×64 → RAM\nMỗi Track = danh sách ảnh của 1 người"]
         S2A --> S2B --> S2C --> S2D
     end
 
     S2 --> S3
 
     subgraph S3["BƯỚC 3 — Sliding Window & Batch Inference"]
-        S3A["🔍 Lọc Track quá ngắn\n(< 30 frame → bỏ qua)"]
+        S3A["🔍 Lọc Track < 30 frame → bỏ qua"]
         S3B["🪟 Cắt Sliding Windows\n30 frame/window · Step=5 frame"]
-        S3C["📦 Nhóm thành Batch (size=8)\nTăng tốc tính toán GPU/CPU"]
-        S3D["🧠 CNN-BiLSTM-Attention\n(best_model.pth)"]
-        S3E["📊 Violence Score\nP(Violence) mỗi window ∈ [0,1]"]
+        S3C["📦 Nhóm Batch (size=8)\nTận dụng song song hóa GPU/CPU"]
+        S3D["🧠 CNN-BiLSTM-Attention\n(best_model.pth — load 1 lần khi khởi động)"]
+        S3E["📊 Violence Score P(Violence)\ncho TỪNG window của TỪNG người"]
         S3A --> S3B --> S3C --> S3D --> S3E
     end
 
     S3 --> S4
 
-    subgraph S4["BƯỚC 4 — Logic Kết luận Đa tầng"]
-        S4A["🔵 Tầng 1: Track-level\nTrung bình điểm tất cả windows\ncủa 1 Track ≥ 45% → Mark violent"]
-        S4B["🔴 Tầng 2: Time-slot MAX\nMỗi time-slot lấy MAX score\ncủa tất cả mọi người\n→ 1 người bạo lực vẫn phát hiện được"]
-        S4C["⏱️ Tầng 3: Consecutive Check\n≥ 5 time-slot liên tiếp ≥ 45%\n→ ~2.5 giây — chống báo động giả"]
+    subgraph S4["BƯỚC 4 — Multi-level Decision Logic (Chống báo động giả)"]
+        S4A["🔵 Tầng 1 — Track-level\nTrung bình tất cả windows của 1 Track\n≥ 45% → Mark track là violent"]
+        S4B["🔴 Tầng 2 — Time-slot MAX Aggregation\nMỗi time-slot lấy MAX score của mọi người\n→ 1 người bạo lực vẫn phát hiện được\ndù đám đông người xem làm loãng điểm"]
+        S4C["⏱️ Tầng 3 — Consecutive Check\n≥ 5 time-slot liên tiếp ≥ 45%\n→ ~2.5 giây liên tục\n→ Loại bỏ false positive từ cử chỉ ngẫu nhiên"]
         S4D{{"🚨 Is Violence?"}}
         S4A --> S4B --> S4C --> S4D
     end
 
     S4 --> S5
 
-    subgraph S5["BƯỚC 5 — Hậu xử lý & Cảnh báo"]
-        direction LR
-        S5A["✂️ Video Clipper\nTrích xuất đoạn bạo lực\n+ Watermark 'VIOLENCE DETECTED'"]
-        S5B["📧 Gmail SMTP\nEmail HTML + clip đính kèm"]
-        S5C["📱 Telegram Bot\nTin nhắn + video clip"]
-        S5D["📊 Flutter Dashboard\nCập nhật violence timeline\n+ Âm thanh còi hú (Siren)"]
-        S5A --> S5B & S5C & S5D
+    subgraph S5["BƯỚC 5 — Post-processing & Alerting"]
+        S5A["✂️ Video Clipper\nTrích xuất đúng đoạn bạo lực\n+ Watermark 'VIOLENCE DETECTED'"]
+        S5B["📧 Gmail SMTP\nEmail HTML đẹp + clip đính kèm"]
+        S5C["📱 Telegram Bot\nTin nhắn tức thì + video clip"]
+        S5D["🔊 Siren Sound\nÂm thanh còi hú trên Web"]
+        S5E["📊 Flutter Dashboard\nCập nhật timeline · Violence ratio\nMax persons · Số đoạn bạo lực"]
+        S5A --> S5B & S5C & S5D & S5E
     end
 
-    S4D -->|"✅ AN TOÀN"| SAFE(["✅ Dashboard cập nhật\nKhông cảnh báo"])
+    S4D -->|"✅ AN TOÀN"| SAFE(["✅ Dashboard cập nhật — Không cảnh báo"])
     S4D -->|"🚨 BẠO LỰC"| S5
 ```
 
-### Logic phát hiện — Tại sao dùng MAX thay vì MEAN?
+### Tại sao dùng MAX thay vì MEAN?
 
-> **Ví dụ thực tế**: 2 người đánh nhau (P=0.85) + 15 người đứng xem (P=0.08)
-> - **MEAN** = 0.17 → ❌ **Bỏ sót bạo lực!**
-> - **MAX** = 0.85 → ✅ **Phát hiện đúng!**
-
-Trong môi trường học đường, chỉ cần **1–2 người** có hành vi bạo lực giữa đám đông là đủ để cảnh báo. Nếu dùng MEAN, xác suất bạo lực sẽ bị "làm loãng" bởi đám đông người xem.
+> **Ví dụ thực tế**: 2 người đánh nhau `P=0.85` + 15 người đứng xem `P=0.08`
+> - **MEAN** = `(2×0.85 + 15×0.08) / 17` = **0.17** → ❌ **Bỏ sót!**
+> - **MAX** = `0.85` → ✅ **Phát hiện đúng!**
 
 ---
 
@@ -265,110 +296,138 @@ Trong môi trường học đường, chỉ cần **1–2 người** có hành v
 
 ```mermaid
 flowchart TB
+    subgraph USER["👤 Người dùng / Camera"]
+        CAM["📹 Video (MP4, AVI, MOV, MKV)"]
+    end
+
     subgraph FE["📱 Flutter Web App (SafeWatch)"]
         FE1["🏠 Dashboard\nThống kê & biểu đồ"]
         FE2["📹 Monitor\nUpload & Phân tích"]
-        FE3["📋 History\nLịch sử cảnh báo"]
-        FE4["⚙️ Settings\nEmail · Telegram · Server URL"]
+        FE3["📋 History\nLịch sử cảnh báo + Timeline"]
+        FE4["📋 Queue\nHàng đợi xử lý"]
+        FE5["⚙️ Settings\nServer URL · Email · Telegram"]
     end
 
-    subgraph BE["⚙️ FastAPI Backend (Python)"]
-        BE1["/api/analyze\nUpload + Detect"]
-        BE2["/api/alerts\nCRUD cảnh báo"]
-        BE3["/api/clips\nDownload clip"]
-        BE4["/api/health\nKiểm tra server"]
+    subgraph BE["⚙️ FastAPI Backend"]
+        API1["POST /api/analyze"]
+        API2["GET /api/alerts"]
+        API3["GET /api/clips"]
+        API4["GET /api/health"]
 
-        subgraph PIPELINE["🔍 Violence Detector Pipeline"]
-            PP1["YOLO11s Tracking"]
-            PP2["Crop + Normalize"]
-            PP3["CNN-BiLSTM-Attention"]
-            PP4["Multi-level Aggregation"]
-            PP1 --> PP2 --> PP3 --> PP4
+        subgraph DET["🔍 Violence Detector"]
+            PP1["YOLO11s\nPerson Detection"]
+            PP2["ByteTrack\nPerson Tracking"]
+            PP3["Crop + Normalize\n64×64 px"]
+            PP4["CNN-BiLSTM-Attention\nWindow Inference"]
+            PP5["MAX Aggregation\n+ Consecutive Check"]
+            PP1 --> PP2 --> PP3 --> PP4 --> PP5
         end
 
-        subgraph SERVICES["📨 Services"]
-            SV1["✂️ Video Clipper"]
-            SV2["📧 Notifier\nGmail + Telegram"]
-            SV3["💾 Alert Storage\nJSON-based CRUD"]
+        subgraph SVC["📨 Services"]
+            SV1["✂️ Video Clipper\nCắt đoạn bạo lực"]
+            SV2["📧 Gmail Notifier\nSMTP + HTML"]
+            SV3["📱 Telegram Bot\nAPI send message"]
+            SV4["💾 Alert Storage\nJSON CRUD"]
         end
     end
 
-    subgraph MODELS["🤖 AI Models"]
-        M1["🏋️ best_model.pth\nCNN-BiLSTM-Attention\n~2.8M params · ~8MB"]
-        M2["👁️ yolo11s.pt\nUltralytics YOLO v11\nPerson Detection"]
+    subgraph AI["🤖 AI Models (Loaded at Startup)"]
+        M1["💾 best_model.pth\nCNN-BiLSTM-Attention\n~2.8M params · ~8MB"]
+        M2["👁️ yolo11s.pt\nUltralytics YOLO v11s\nPerson Detection"]
     end
 
+    subgraph NOTIF["📬 Kênh thông báo"]
+        N1["📧 Gmail"]
+        N2["📱 Telegram"]
+        N3["🔊 Browser Siren"]
+    end
+
+    CAM --> FE2
     FE -->|"HTTP (Dio)"| BE
-    BE4 -.->|"Health check"| FE
-    PIPELINE --> SERVICES
-    M1 -.->|"Loaded at startup"| PP3
-    M2 -.->|"Loaded at startup"| PP1
+    BE --> NOTIF
+    DET --> SVC
+    M1 -.->|"Singleton"| PP4
+    M2 -.->|"Singleton"| PP1
+    SV2 --> N1
+    SV3 --> N2
+    FE5 --> N3
 ```
 
 ---
 
-## ⚡ Backend API
+## 📱 Giao diện Ứng dụng — SafeWatch
 
-Backend xây dựng bằng **FastAPI**, cung cấp các endpoint:
+### Monitor — Upload & Phân tích
 
-| Method | Endpoint | Mô tả |
-|---|---|---|
-| `GET` | `/api/health` | Kiểm tra trạng thái server |
-| `POST` | `/api/analyze` | Upload video + phân tích bạo lực |
-| `GET` | `/api/alerts` | Lấy danh sách cảnh báo |
-| `GET` | `/api/alerts/{id}` | Xem chi tiết 1 cảnh báo |
-| `DELETE` | `/api/alerts/{id}` | Xoá cảnh báo |
-| `GET` | `/api/clips/{job_id}/{filename}` | Download clip bạo lực |
+![Màn hình Monitor — Upload video để phân tích](./results/menu.png)
 
-### Tính năng
+### Hàng chờ — Xử lý đa video (Multi-camera)
 
-- **Phân tích video**: Upload → YOLO tracking → CNN-BiLSTM → trả kết quả JSON
-- **Cắt clip tự động**: Cắt chính xác đoạn bạo lực với watermark "VIOLENCE DETECTED"
-- **Thông báo đa kênh**:
-  - 📧 **Gmail**: Email HTML đẹp kèm clip đính kèm (SMTP + App Password)
-  - 📱 **Telegram Bot**: Gửi tin nhắn + video clip qua Bot API
-- **Lưu trữ cảnh báo**: JSON-based storage, hỗ trợ CRUD
+![Hàng chờ phân tích — hiển thị kết quả từng video](./results/hang_cho.png)
+
+### Dashboard — Thống kê tổng quan
+
+![Dashboard thống kê biểu đồ](./results/dashboard.png)
+
+### Lịch sử — Violence Timeline
+
+![Lịch sử cảnh báo với timeline đoạn bạo lực](./results/history.png)
+
+### Cài đặt — Cấu hình Email / Telegram / Server
+
+![Cài đặt kết nối và thông báo](./results/setting.png)
 
 ---
 
-## 📱 Ứng dụng Flutter — SafeWatch
+## 📊 Kết quả Thực nghiệm
 
-Ứng dụng Flutter Web với giao diện dark mode hiện đại.
+### So sánh 3 phương pháp đánh giá (40 video test)
 
-### Các màn hình
+![So sánh 3 hướng đánh giá — Accuracy, F1, Precision, Recall](./test_result/comparison_summary.png)
 
-| Màn hình | Mô tả |
+| Phương pháp | Accuracy | F1 (Violence) | Precision | Recall |
+|---|---|---|---|---|
+| **H1: Sliding Window** | 77.5% | 80.8% | 70.4% | **95.0%** |
+| **H2: Full App Pipeline** ⭐ | **90.0%** | **90.0%** | **90.0%** | 90.0% |
+| **H3: No Sliding** | 79.3% | 83.4% | 76.5% | 91.8% |
+
+> **H2 — Full App Pipeline** đạt hiệu suất tốt nhất **90% Accuracy** trên tập test 40 video. Đây là cách hệ thống thực sự hoạt động trong ứng dụng SafeWatch.
+
+### Confusion Matrix — Test Set (Window-level)
+
+![Confusion Matrix trên tập test](./results/confusion_matrix_test.png)
+
+| Metric | Giá trị |
 |---|---|
-| **Onboarding** | Giới thiệu ứng dụng lần đầu sử dụng |
-| **Home** | Navigation bar với 4 tab chính |
-| **Monitor** | Upload video + xem kết quả phân tích real-time |
-| **Dashboard** | Thống kê tổng quan: biểu đồ tròn, bar chart, timeline |
-| **History** | Lịch sử cảnh báo, tìm kiếm, chi tiết từng alert |
-| **Queue** | Hàng đợi xử lý khi upload nhiều video |
-| **Settings** | Cấu hình email, Telegram, server URL |
+| True Positive (Violence đúng) | **1,154** |
+| True Negative (Non-Violence đúng) | **1,725** |
+| False Positive | 203 |
+| False Negative | 143 |
+| **Accuracy tổng** | **~89%** |
 
-### Tính năng nổi bật
+### Quá trình Huấn luyện — Loss & Accuracy
 
-- 🎨 **Giao diện Dark Mode** premium với animations (flutter_animate)
-- 📊 **Dashboard thống kê** với biểu đồ tương tác (fl_chart)
-- 📄 **Xuất báo cáo PDF** chi tiết kết quả phân tích
-- 🔔 **Âm thanh cảnh báo** tuỳ chỉnh được
-- 📹 **Violence Timeline** — hiển thị timeline đoạn bạo lực trực quan
-- ⚙️ **Cấu hình linh hoạt** — thay đổi server URL, email, Telegram ngay trong app
+![Biểu đồ Loss và Accuracy theo Epoch](./results/improved_history.png)
 
-### Thư viện Flutter sử dụng
+- **Train Accuracy**: ~91% sau ~80 epochs
+- **Val Accuracy**: ~90% — không có dấu hiệu overfitting nghiêm trọng
+- **Hội tụ**: Loss giảm ổn định từ 0.61 → 0.42
 
-| Package | Mục đích |
-|---|---|
-| `dio` | HTTP client cho API calls |
-| `file_picker` | Chọn file video để upload |
-| `fl_chart` | Biểu đồ thống kê |
-| `flutter_animate` | Micro-animations cho UI |
-| `google_fonts` | Typography đẹp |
-| `shared_preferences` | Lưu cài đặt local |
-| `pdf` + `printing` | Xuất báo cáo PDF |
-| `intl` | Format ngày giờ |
-| `percent_indicator` | Thanh tiến trình |
+### Phân phối Xác suất — Test Set
+
+![Phân phối xác suất Violence trên tập test](./results/prob_dist_test.png)
+
+Biểu đồ cho thấy mô hình **phân biệt rõ ràng** hai lớp:
+- **Non-Violence** (xanh): tập trung ở vùng P < 0.35
+- **Violence** (cam): tập trung ở vùng P > 0.70
+- **Ngưỡng 45%** (đường đứt nét) tạo vùng phân tách hiệu quả
+
+### Phân phối Dữ liệu Huấn luyện
+
+![Phân phối Tracks theo tập Train/Val/Test](./results/data_distribution.png)
+
+- **Tổng Tracks**: ~1,356 (Train: 919, Val: 300, Test: 137)
+- **Tỉ lệ Violence**: ~36% trên mọi tập — phân phối đều, không bị lệch
 
 ---
 
@@ -396,48 +455,48 @@ Dataset bao gồm file `data_labels.zip` chứa toàn bộ video gốc và annot
 data_labels.zip
 ├── data/
 │   ├── violence/              # Video có hành vi bạo lực
-│   │   ├── v_001.mp4
-│   │   └── ...
 │   └── non_violence/          # Video không có bạo lực
-│       ├── nv_001.mp4
-│       └── ...
 └── fix_labels/                # Annotation XML (CVAT format)
     ├── violence/
-    │   ├── v_001.xml
-    │   └── ...
     └── non_violence/
-        ├── nv_001.xml
-        └── ...
 ```
 
 ### Chia dữ liệu
 
-Dữ liệu được chia theo **video** (không theo track) để tránh data leakage:
+| Tập | Tỷ lệ | Video | Tracks (ước tính) |
+|---|---|---|---|
+| **Train** | 70% | ~210 | ~919 |
+| **Validation** | 20% | ~60 | ~300 |
+| **Test** | 10% | ~30 | ~137 |
 
-| Tập | Tỷ lệ | Mục đích |
-|---|---|---|
-| **Train** | 70% | Huấn luyện mô hình |
-| **Validation** | 20% | Điều chỉnh hyperparameter, early stopping |
-| **Test** | 10% | Đánh giá hiệu suất cuối cùng |
-
-> ⚠️ **Lưu ý**: 300 video → ~500-800 tracks → ~2000+ sliding windows (mỗi window = 30 frame = 1 giây).
+> ⚠️ Chia theo **video** (không theo track) để tránh data leakage.
 
 ---
 
-## 📊 Kết quả thực nghiệm
+## ⚡ Backend API
 
-### Hiệu suất mô hình
+| Method | Endpoint | Mô tả |
+|---|---|---|
+| `GET` | `/api/health` | Kiểm tra trạng thái server |
+| `POST` | `/api/analyze` | Upload video + phân tích bạo lực |
+| `GET` | `/api/alerts` | Lấy danh sách cảnh báo |
+| `GET` | `/api/alerts/{id}` | Xem chi tiết 1 cảnh báo |
+| `DELETE` | `/api/alerts/{id}` | Xoá cảnh báo |
+| `GET` | `/api/clips/{job_id}/{filename}` | Download clip bạo lực |
 
-| Metric | Giá trị |
-|---|---|
-| **Train Accuracy** | ~90% |
-| **Test Accuracy** | ~89% |
-| **Tổng tham số** | ~2.8M |
-| **Kích thước model** | ~8 MB |
-| **Ngưỡng phân loại** | 45% |
-| **Consecutive Windows** | ≥ 5 (~2.5 giây liên tiếp) |
-
-> **Lưu ý**: Confusion matrix đánh giá ở cấp **sliding window** (mỗi window = 1 giây video), không phải cấp video. 300 video → ~500-800 tracks → ~2000+ windows.
+**Response mẫu từ `/api/analyze`:**
+```json
+{
+  "is_violence": true,
+  "segments": [
+    { "start_sec": 2.5, "end_sec": 8.1, "confidence": 85.4 }
+  ],
+  "video_duration": 12.3,
+  "violence_ratio": 0.62,
+  "max_violent_persons": 3,
+  "summary": "Phát hiện bạo lực (1 đoạn, 38/61 time-slot vượt ngưỡng, tối đa 3 người bạo lực cùng lúc)"
+}
+```
 
 ---
 
@@ -452,48 +511,34 @@ Dữ liệu được chia theo **video** (không theo track) để tránh data l
 ### 1. Huấn luyện mô hình
 
 ```bash
-# Cài đặt dependencies
 pip install torch torchvision opencv-python numpy matplotlib seaborn scikit-learn tqdm ultralytics
 
 # Chuẩn bị dữ liệu
-# - Đặt video vào data/violence/ và data/non_violence/
-# - Đặt XML annotation (CVAT) vào fix_labels/violence/ và fix_labels/non_violence/
+# - data/violence/ và data/non_violence/
+# - fix_labels/violence/ và fix_labels/non_violence/
 
-# Chạy huấn luyện
 python train_ai.py
-# → Output: best_model.pth, confusion matrix, biểu đồ
+# → Output: results/best_model.pth
 ```
 
 ### 2. Chạy Backend
 
 ```bash
 cd backend
-
-# Cài đặt dependencies
 pip install -r requirements.txt
 pip install torch torchvision ultralytics
 
-# Cấu hình
 cp .env.example .env
-# → Sửa file .env: điền Gmail App Password, Telegram Bot Token, đường dẫn model
+# Điền Gmail App Password, Telegram Bot Token, đường dẫn model
 
-# Chạy server
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
-# hoặc
-python main.py
 ```
 
-**Cấu hình `.env`**:
-
+**Cấu hình `.env`:**
 ```env
-# Gmail (bật 2FA → tạo App Password)
 GMAIL_SENDER=your_email@gmail.com
 GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
-
-# Telegram Bot (tạo bằng @BotFather)
 TELEGRAM_BOT_TOKEN=your_bot_token_here
-
-# Đường dẫn model
 MODEL_PATH=../results/best_model.pth
 YOLO_PATH=../yolo11s.pt
 ```
@@ -502,18 +547,11 @@ YOLO_PATH=../yolo11s.pt
 
 ```bash
 cd violence_app
-
-# Cài đặt dependencies
 flutter pub get
-
-# Chạy ứng dụng web
 flutter run -d chrome
-
-# Hoặc build web
-flutter build web
 ```
 
-> Sau khi chạy app, vào **Settings** để cấu hình Server URL trỏ về backend (mặc định `http://localhost:8000`).
+> Vào **Settings** để cấu hình Server URL → `http://localhost:8000`
 
 ---
 
@@ -521,51 +559,46 @@ flutter build web
 
 ```
 DATN/
-├── train_ai.py              # Script huấn luyện model CNN-BiLSTM-Attention
-├── evaluate_model.py        # Script đánh giá hiệu suất mô hình
+├── train_ai.py              # Script huấn luyện CNN-BiLSTM-Attention
+├── evaluate_model.py        # Đánh giá hiệu suất (3 hướng)
 ├── dectect_people.py        # Script detect người (testing)
-├── rename.py                # Đổi tên file tiện ích
 ├── report_DATN.pdf          # Báo cáo đồ án tốt nghiệp
 │
-├── data/                    # Dữ liệu video gốc
-│   ├── violence/            #   Video bạo lực
-│   └── non_violence/        #   Video không bạo lực
-│
-├── fix_labels/              # Annotation XML (CVAT format)
+├── data/                    # Video gốc
 │   ├── violence/
 │   └── non_violence/
+├── fix_labels/              # Annotation XML (CVAT)
+├── processed_tracks_v5/     # Cache tiền xử lý (.npy)
 │
-├── processed_tracks_v5/     # Cache dữ liệu đã tiền xử lý (.npy)
-│
-├── results/                 # Kết quả huấn luyện
-│   ├── best_model.pth       #   Model tốt nhất
-│   ├── improved_history.png #   Biểu đồ Loss & Accuracy
+├── results/                 # Kết quả huấn luyện & ảnh app
+│   ├── best_model.pth       # Model tốt nhất (~8MB)
+│   ├── improved_history.png # Loss & Accuracy curves
 │   ├── confusion_matrix_*.png
-│   └── data_distribution.png
+│   ├── prob_dist_*.png
+│   ├── data_distribution.png
+│   └── *.png                # Screenshots app SafeWatch
+│
+├── test_result/             # Kết quả đánh giá chi tiết
+│   ├── comparison_summary.png
+│   ├── evaluation_report.txt
+│   └── approach*_*.png
 │
 ├── backend/                 # FastAPI Backend
-│   ├── main.py              #   API endpoints
-│   ├── violence_detector.py #   Detection pipeline
-│   ├── video_clipper.py     #   Cắt clip bạo lực
-│   ├── notifier.py          #   Gửi Gmail + Telegram
-│   ├── requirements.txt     #   Python dependencies
-│   ├── .env.example         #   Mẫu cấu hình
-│   ├── uploads/             #   Video upload tạm
-│   └── clips/               #   Clip bạo lực đã cắt
+│   ├── main.py              # API endpoints
+│   ├── violence_detector.py # Detection pipeline
+│   ├── video_clipper.py     # Cắt clip bạo lực
+│   ├── notifier.py          # Gmail + Telegram
+│   └── requirements.txt
 │
 ├── violence_app/            # Flutter App (SafeWatch)
-│   ├── lib/
-│   │   ├── main.dart        #   Entry point
-│   │   ├── models/          #   Data models (AlertModel, QueueJob)
-│   │   ├── screens/         #   7 màn hình UI
-│   │   ├── services/        #   API, PDF, Queue, Sound services
-│   │   ├── theme/           #   Dark theme configuration
-│   │   └── widgets/         #   Custom widgets (Timeline, SoundBar)
-│   ├── pubspec.yaml         #   Flutter dependencies
-│   └── web/                 #   Web platform files
+│   └── lib/
+│       ├── screens/         # 7 màn hình UI
+│       ├── services/        # API, PDF, Queue, Sound
+│       ├── models/          # AlertModel, QueueJob
+│       └── widgets/         # Timeline, SoundBar
 │
-├── yolo11s.pt               # YOLOv11s pre-trained weights
-└── pipeline.txt             # Mô tả chi tiết pipeline (text)
+├── yolo11s.pt               # YOLO v11s weights
+└── pipeline.txt             # Mô tả pipeline (text)
 ```
 
 ---
@@ -577,7 +610,7 @@ DATN/
 | Công nghệ | Phiên bản | Mục đích |
 |---|---|---|
 | PyTorch | - | Framework deep learning chính |
-| Ultralytics YOLO | v11s | Phát hiện và tracking người (ByteTrack) |
+| Ultralytics YOLO | v11s | Person detection + ByteTrack |
 | OpenCV | 4.9.0 | Xử lý video, crop, resize |
 | scikit-learn | - | Metrics, confusion matrix |
 | NumPy | 1.26.4 | Xử lý dữ liệu số |
@@ -590,23 +623,17 @@ DATN/
 | Uvicorn | 0.30.0 | ASGI server |
 | python-dotenv | 1.0.1 | Quản lý biến môi trường |
 | smtplib | built-in | Gửi email Gmail |
-| python-telegram-bot | 21.3 | Gửi cảnh báo Telegram |
+| python-telegram-bot | 21.3 | Cảnh báo Telegram |
 
 ### Frontend
 
 | Công nghệ | Phiên bản | Mục đích |
 |---|---|---|
 | Flutter | SDK ^3.10.1 | Framework UI cross-platform |
-| Dart | - | Ngôn ngữ lập trình |
 | Dio | 5.4.3 | HTTP client |
 | fl_chart | 1.2.0 | Biểu đồ thống kê |
-| flutter_animate | 4.5.0 | Animations |
-
-### Annotation
-
-| Công cụ | Mục đích |
-|---|---|
-| CVAT | Gán nhãn bounding box theo frame cho từng người trong video |
+| flutter_animate | 4.5.0 | Micro-animations |
+| pdf + printing | - | Xuất báo cáo PDF |
 
 ---
 
