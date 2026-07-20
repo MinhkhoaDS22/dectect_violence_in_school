@@ -637,7 +637,7 @@ DATN/
 
 ---
 
-## 👨‍💻 Tác giả
+## 👨‍💻 Tác giả - Trương Minh Khoa
 
 Đồ án tốt nghiệp — Trường Đại học Công nghệ TP.HCM (HUTECH) 2026
 
